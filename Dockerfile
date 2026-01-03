@@ -19,6 +19,9 @@ RUN npm run build
 # Production stage
 FROM node:20-alpine AS production
 
+# Install tini for proper signal handling
+RUN apk add --no-cache tini
+
 WORKDIR /app
 
 # Copy package files
@@ -46,6 +49,9 @@ ENV TYPECHO_DB_PASSWORD=""
 ENV TYPECHO_DB_DATABASE="typecho"
 ENV TYPECHO_DB_CHARSET="utf8"
 ENV TYPECHO_DB_PREFIX="typecho_"
+
+# Use tini as init process for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
 
 # Run the application
 CMD ["node", "dist/index.js"]
