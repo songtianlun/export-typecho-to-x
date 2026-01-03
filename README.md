@@ -13,6 +13,10 @@ A CLI tool to sync Typecho blog posts to Notion database.
 - 比较修改时间，跳过未变更的文章 | Skip unmodified posts by comparing modification time
 - 文章正文作为 Notion 页面内容（支持 Markdown） | Post content as Notion page body (Markdown supported)
 
+## 效果预览 | Screenshot
+
+![效果预览 Screenshot](assets/screenshot1.png)
+
 ## 安装 | Installation
 
 ```bash
