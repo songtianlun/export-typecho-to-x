@@ -199,45 +199,165 @@ export class NotionClient {
     };
   }
 
-  // 解析文本中的 Markdown 链接，返回 Notion rich_text 数组
-  private parseRichText(text: string): Array<{ type: 'text'; text: { content: string; link?: { url: string } } }> {
-    const result: Array<{ type: 'text'; text: { content: string; link?: { url: string } } }> = [];
+  // Rich text item 类型定义
+  private createRichTextItem(
+    content: string,
+    options: {
+      link?: { url: string };
+      bold?: boolean;
+      italic?: boolean;
+      strikethrough?: boolean;
+      code?: boolean;
+    } = {}
+  ): {
+    type: 'text';
+    text: { content: string; link?: { url: string } };
+    annotations?: { bold?: boolean; italic?: boolean; strikethrough?: boolean; code?: boolean };
+  } {
+    const item: {
+      type: 'text';
+      text: { content: string; link?: { url: string } };
+      annotations?: { bold?: boolean; italic?: boolean; strikethrough?: boolean; code?: boolean };
+    } = {
+      type: 'text',
+      text: { content },
+    };
 
-    // 匹配两种链接格式：
-    // 1. [text](url) - 标准 Markdown 链接
-    // 2. <url> - 自动链接
-    const linkRegex = /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|<(https?:\/\/[^>]+)>/g;
+    if (options.link) {
+      item.text.link = options.link;
+    }
+
+    // 只有当有格式化选项时才添加 annotations
+    if (options.bold || options.italic || options.strikethrough || options.code) {
+      item.annotations = {};
+      if (options.bold) item.annotations.bold = true;
+      if (options.italic) item.annotations.italic = true;
+      if (options.strikethrough) item.annotations.strikethrough = true;
+      if (options.code) item.annotations.code = true;
+    }
+
+    return item;
+  }
+
+  // 解析文本中的 Markdown 格式（加粗、斜体、删除线、内联代码、链接），返回 Notion rich_text 数组
+  private parseRichText(
+    text: string
+  ): Array<{
+    type: 'text';
+    text: { content: string; link?: { url: string } };
+    annotations?: { bold?: boolean; italic?: boolean; strikethrough?: boolean; code?: boolean };
+  }> {
+    const result: Array<{
+      type: 'text';
+      text: { content: string; link?: { url: string } };
+      annotations?: { bold?: boolean; italic?: boolean; strikethrough?: boolean; code?: boolean };
+    }> = [];
+
+    // 综合正则匹配：内联代码、链接、加粗、斜体、删除线
+    // 顺序很重要：先匹配内联代码（避免内部格式被解析），再匹配链接，再匹配其他格式
+    const tokenRegex =
+      /`([^`]+)`|\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|<(https?:\/\/[^>]+)>|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*([^*]+)\*(?!\*)|\b_([^_]+)_\b|~~(.+?)~~/g;
 
     let lastIndex = 0;
     let match;
 
-    while ((match = linkRegex.exec(text)) !== null) {
-      // 添加链接前的普通文本
+    while ((match = tokenRegex.exec(text)) !== null) {
+      // 添加匹配前的普通文本
       if (match.index > lastIndex) {
         const plainText = text.slice(lastIndex, match.index);
         if (plainText) {
-          result.push({
-            type: 'text',
-            text: { content: plainText },
-          });
+          result.push(this.createRichTextItem(plainText));
         }
       }
 
-      if (match[1] !== undefined && match[2] !== undefined) {
-        // [text](url) 格式
-        const linkText = match[1] || match[2]; // 如果文本为空，使用 URL 作为文本
-        const linkUrl = match[2];
-        result.push({
-          type: 'text',
-          text: { content: linkText, link: { url: linkUrl } },
-        });
-      } else if (match[3] !== undefined) {
-        // <url> 格式
-        const url = match[3];
-        result.push({
-          type: 'text',
-          text: { content: url, link: { url: url } },
-        });
+      if (match[1] !== undefined) {
+        // `code` 内联代码
+        result.push(this.createRichTextItem(match[1], { code: true }));
+      } else if (match[2] !== undefined && match[3] !== undefined) {
+        // [text](url) 格式链接
+        const linkText = match[2] || match[3];
+        const linkUrl = match[3];
+        // 递归解析链接文本中的格式（如加粗）
+        const parsedLinkText = this.parseInlineFormat(linkText);
+        for (const item of parsedLinkText) {
+          result.push(
+            this.createRichTextItem(item.content, {
+              link: { url: linkUrl },
+              bold: item.bold,
+              italic: item.italic,
+              strikethrough: item.strikethrough,
+              code: item.code,
+            })
+          );
+        }
+      } else if (match[4] !== undefined) {
+        // <url> 自动链接格式
+        result.push(this.createRichTextItem(match[4], { link: { url: match[4] } }));
+      } else if (match[5] !== undefined) {
+        // **text** 加粗
+        const parsedContent = this.parseInlineFormat(match[5], { bold: true });
+        for (const item of parsedContent) {
+          result.push(
+            this.createRichTextItem(item.content, {
+              bold: true,
+              italic: item.italic,
+              strikethrough: item.strikethrough,
+              code: item.code,
+            })
+          );
+        }
+      } else if (match[6] !== undefined) {
+        // __text__ 加粗
+        const parsedContent = this.parseInlineFormat(match[6], { bold: true });
+        for (const item of parsedContent) {
+          result.push(
+            this.createRichTextItem(item.content, {
+              bold: true,
+              italic: item.italic,
+              strikethrough: item.strikethrough,
+              code: item.code,
+            })
+          );
+        }
+      } else if (match[7] !== undefined) {
+        // *text* 斜体
+        const parsedContent = this.parseInlineFormat(match[7], { italic: true });
+        for (const item of parsedContent) {
+          result.push(
+            this.createRichTextItem(item.content, {
+              bold: item.bold,
+              italic: true,
+              strikethrough: item.strikethrough,
+              code: item.code,
+            })
+          );
+        }
+      } else if (match[8] !== undefined) {
+        // _text_ 斜体
+        const parsedContent = this.parseInlineFormat(match[8], { italic: true });
+        for (const item of parsedContent) {
+          result.push(
+            this.createRichTextItem(item.content, {
+              bold: item.bold,
+              italic: true,
+              strikethrough: item.strikethrough,
+              code: item.code,
+            })
+          );
+        }
+      } else if (match[9] !== undefined) {
+        // ~~text~~ 删除线
+        const parsedContent = this.parseInlineFormat(match[9], { strikethrough: true });
+        for (const item of parsedContent) {
+          result.push(
+            this.createRichTextItem(item.content, {
+              bold: item.bold,
+              italic: item.italic,
+              strikethrough: true,
+              code: item.code,
+            })
+          );
+        }
       }
 
       lastIndex = match.index + match[0].length;
@@ -247,19 +367,83 @@ export class NotionClient {
     if (lastIndex < text.length) {
       const remainingText = text.slice(lastIndex);
       if (remainingText) {
-        result.push({
-          type: 'text',
-          text: { content: remainingText },
-        });
+        result.push(this.createRichTextItem(remainingText));
       }
     }
 
-    // 如果没有任何链接，返回原始文本
+    // 如果没有任何匹配，返回原始文本
     if (result.length === 0) {
-      result.push({
-        type: 'text',
-        text: { content: text },
-      });
+      result.push(this.createRichTextItem(text));
+    }
+
+    return result;
+  }
+
+  // 解析内联格式（用于递归解析嵌套格式）
+  private parseInlineFormat(
+    text: string,
+    inherited: { bold?: boolean; italic?: boolean; strikethrough?: boolean; code?: boolean } = {}
+  ): Array<{
+    content: string;
+    bold?: boolean;
+    italic?: boolean;
+    strikethrough?: boolean;
+    code?: boolean;
+  }> {
+    const result: Array<{
+      content: string;
+      bold?: boolean;
+      italic?: boolean;
+      strikethrough?: boolean;
+      code?: boolean;
+    }> = [];
+
+    // 简化的内联格式匹配（不包括链接，避免循环）
+    const inlineRegex = /`([^`]+)`|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*([^*]+)\*(?!\*)|\b_([^_]+)_\b|~~(.+?)~~/g;
+
+    let lastIndex = 0;
+    let match;
+
+    while ((match = inlineRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        const plainText = text.slice(lastIndex, match.index);
+        if (plainText) {
+          result.push({ content: plainText, ...inherited });
+        }
+      }
+
+      if (match[1] !== undefined) {
+        // `code`
+        result.push({ content: match[1], ...inherited, code: true });
+      } else if (match[2] !== undefined) {
+        // **bold**
+        result.push({ content: match[2], ...inherited, bold: true });
+      } else if (match[3] !== undefined) {
+        // __bold__
+        result.push({ content: match[3], ...inherited, bold: true });
+      } else if (match[4] !== undefined) {
+        // *italic*
+        result.push({ content: match[4], ...inherited, italic: true });
+      } else if (match[5] !== undefined) {
+        // _italic_
+        result.push({ content: match[5], ...inherited, italic: true });
+      } else if (match[6] !== undefined) {
+        // ~~strikethrough~~
+        result.push({ content: match[6], ...inherited, strikethrough: true });
+      }
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      const remainingText = text.slice(lastIndex);
+      if (remainingText) {
+        result.push({ content: remainingText, ...inherited });
+      }
+    }
+
+    if (result.length === 0) {
+      result.push({ content: text, ...inherited });
     }
 
     return result;
@@ -294,7 +478,41 @@ export class NotionClient {
         continue;
       }
 
-      // 标题
+      // 标题（从多到少匹配，避免 #### 被 ### 误匹配）
+      // Notion 只支持 h1-h3，h4-h6 映射到 h3
+      if (line.startsWith('###### ')) {
+        blocks.push({
+          type: 'heading_3',
+          heading_3: {
+            rich_text: this.parseRichText(line.slice(7)),
+          },
+        });
+        i++;
+        continue;
+      }
+
+      if (line.startsWith('##### ')) {
+        blocks.push({
+          type: 'heading_3',
+          heading_3: {
+            rich_text: this.parseRichText(line.slice(6)),
+          },
+        });
+        i++;
+        continue;
+      }
+
+      if (line.startsWith('#### ')) {
+        blocks.push({
+          type: 'heading_3',
+          heading_3: {
+            rich_text: this.parseRichText(line.slice(5)),
+          },
+        });
+        i++;
+        continue;
+      }
+
       if (line.startsWith('### ')) {
         blocks.push({
           type: 'heading_3',
