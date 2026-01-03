@@ -41,6 +41,8 @@ cp .env.example .env
 
 ## 使用
 
+### 本地运行
+
 ```bash
 # 开发模式运行
 npm run dev
@@ -54,6 +56,24 @@ npm run dev -- --no-cache
 
 # 清除缓存
 npm run dev -- --clear-cache
+```
+
+### Docker 运行
+
+```bash
+# 使用环境变量运行
+docker run --rm \
+  -e NOTION_KEY="secret_xxx" \
+  -e NOTION_DATABASE_ID="your_database_id" \
+  -e TYPECHO_DB_HOST="your_db_host" \
+  -e TYPECHO_DB_PORT="5432" \
+  -e TYPECHO_DB_USER="typecho" \
+  -e TYPECHO_DB_PASSWORD="your_password" \
+  -e TYPECHO_DB_DATABASE="typecho" \
+  songtianlun/sync-typecho-to-notion
+
+# 或使用 env 文件运行
+docker run --rm --env-file .env songtianlun/sync-typecho-to-notion
 ```
 
 ## 缓存
@@ -118,6 +138,27 @@ Skipped:        30
 Failed:         0
 ==================================================
 Sync completed!
+```
+
+## 开发者
+
+### 本地开发
+
+```bash
+# 安装依赖
+npm install
+
+# 开发模式运行
+npm run dev
+
+# 编译
+npm run build
+```
+
+### 构建 Docker 镜像
+
+```bash
+docker build -t sync-typecho-to-notion .
 ```
 
 ## License
