@@ -81,23 +81,27 @@ async function syncPosts(noCache: boolean): Promise<void> {
     console.log('Starting sync...');
     console.log('-'.repeat(50));
 
+    let currentIndex = 0;
     for (const post of posts) {
+      currentIndex++;
+      const progress = `[${currentIndex}/${posts.length}]`;
+
       try {
         const existing = existingPosts[post.slug];
 
         if (existing) {
           const postModified = new Date(post.modified * 1000).toISOString();
           if (existing.modified && existing.modified >= postModified) {
-            console.log(`[SKIP] "${post.title}" (slug: ${post.slug}) - not modified`);
+            console.log(`${progress} [SKIP] "${post.title}" (slug: ${post.slug})`);
             result.skipped++;
             continue;
           }
 
-          console.log(`[UPDATE] "${post.title}" (slug: ${post.slug})`);
+          console.log(`${progress} [UPDATE] "${post.title}" (slug: ${post.slug})`);
           await notionClient.updatePage(existing.pageId, post);
           result.updated++;
         } else {
-          console.log(`[CREATE] "${post.title}" (slug: ${post.slug})`);
+          console.log(`${progress} [CREATE] "${post.title}" (slug: ${post.slug})`);
           await notionClient.createPage(post);
           result.created++;
         }
@@ -105,7 +109,7 @@ async function syncPosts(noCache: boolean): Promise<void> {
         await sleep(350);
       } catch (error) {
         const errorMessage = (error as Error).message;
-        console.error(`[FAILED] "${post.title}" - ${errorMessage}`);
+        console.error(`${progress} [FAILED] "${post.title}" - ${errorMessage}`);
         result.failed++;
         result.errors.push({ title: post.title, error: errorMessage });
       }
@@ -172,16 +176,20 @@ async function syncLinks(): Promise<void> {
     console.log('Starting sync...');
     console.log('-'.repeat(50));
 
+    let currentIndex = 0;
     for (const link of links) {
+      currentIndex++;
+      const progress = `[${currentIndex}/${links.length}]`;
+
       try {
         const existing = existingLinks[link.url];
 
         if (existing) {
-          console.log(`[UPDATE] "${link.name}" (url: ${link.url})`);
+          console.log(`${progress} [UPDATE] "${link.name}" (url: ${link.url})`);
           await notionLinksClient.updatePage(existing.pageId, link);
           result.updated++;
         } else {
-          console.log(`[CREATE] "${link.name}" (url: ${link.url})`);
+          console.log(`${progress} [CREATE] "${link.name}" (url: ${link.url})`);
           await notionLinksClient.createPage(link);
           result.created++;
         }
@@ -189,7 +197,7 @@ async function syncLinks(): Promise<void> {
         await sleep(350);
       } catch (error) {
         const errorMessage = (error as Error).message;
-        console.error(`[FAILED] "${link.name}" - ${errorMessage}`);
+        console.error(`${progress} [FAILED] "${link.name}" - ${errorMessage}`);
         result.failed++;
         result.errors.push({ title: link.name, error: errorMessage });
       }

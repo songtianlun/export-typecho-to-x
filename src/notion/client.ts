@@ -733,17 +733,26 @@ export class NotionClient {
 
   // 替换页面内容
   private async replacePageContent(pageId: string, content: string): Promise<void> {
-    // 获取现有块
-    const existingBlocks = await this.client.blocks.children.list({
-      block_id: pageId,
-      page_size: 100,
-    });
+    // 获取并删除所有现有块（处理分页）
+    let hasMore = true;
+    let startCursor: string | undefined;
 
-    // 删除现有块
-    for (const block of existingBlocks.results) {
-      if ('id' in block) {
-        await this.client.blocks.delete({ block_id: block.id });
+    while (hasMore) {
+      const existingBlocks = await this.client.blocks.children.list({
+        block_id: pageId,
+        page_size: 100,
+        start_cursor: startCursor,
+      });
+
+      // 删除当前批次的块
+      for (const block of existingBlocks.results) {
+        if ('id' in block) {
+          await this.client.blocks.delete({ block_id: block.id });
+        }
       }
+
+      hasMore = existingBlocks.has_more;
+      startCursor = existingBlocks.next_cursor ?? undefined;
     }
 
     // 添加新内容
