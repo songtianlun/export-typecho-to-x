@@ -46,10 +46,12 @@ export class NotionClient {
   private client: Client;
   private databaseId: string;
   private titlePropertyName: string = 'Name'; // 默认 title 属性名
+  private skipImageValidation: boolean;
 
-  constructor(config: NotionConfig) {
+  constructor(config: NotionConfig, skipImageValidation: boolean = false) {
     this.client = new Client({ auth: config.apiKey });
     this.databaseId = config.databaseId;
+    this.skipImageValidation = skipImageValidation;
   }
 
   // 检查并创建缺失的数据库属性
@@ -133,7 +135,7 @@ export class NotionClient {
   // 创建新页面
   async createPage(post: TypechoPost): Promise<string> {
     const properties = this.buildProperties(post);
-    const children = this.convertContentToBlocks(post.text);
+    const children = await this.convertContentToBlocks(post.text);
 
     // Notion API 限制创建页面时最多 100 个子块
     const initialChildren = children.slice(0, 100);
@@ -280,6 +282,40 @@ export class NotionClient {
       return sanitized;
     } catch {
       return null;
+    }
+  }
+
+  // 验证图片 URL 是否有效
+  private async validateImageUrl(url: string): Promise<boolean> {
+    // 如果跳过验证，直接返回 true
+    if (this.skipImageValidation) {
+      return true;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'HEAD',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; NotionSync/1.0)',
+        },
+        signal: AbortSignal.timeout(5000), // 5秒超时
+      });
+
+      // 检查状态码是否为 2xx
+      if (!response.ok) {
+        return false;
+      }
+
+      // 检查 Content-Type 是否为图片类型
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.startsWith('image/')) {
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      // 网络错误或超时，认为 URL 无效
+      return false;
     }
   }
 
@@ -517,7 +553,7 @@ export class NotionClient {
   }
 
   // 将 Markdown 内容转换为 Notion blocks
-  private convertContentToBlocks(content: string): BlockObjectRequest[] {
+  private async convertContentToBlocks(content: string): Promise<BlockObjectRequest[]> {
     const blocks: BlockObjectRequest[] = [];
     const lines = content.split('\n');
     let i = 0;
@@ -665,14 +701,22 @@ export class NotionClient {
       if (imageMatch) {
         const altText = imageMatch[1];
         const imageUrl = imageMatch[2];
-        blocks.push({
-          type: 'image',
-          image: {
-            type: 'external',
-            external: { url: imageUrl },
-            caption: altText ? [{ type: 'text', text: { content: altText } }] : [],
-          },
-        } as BlockObjectRequest);
+
+        // 验证图片 URL 是否有效
+        const isValid = await this.validateImageUrl(imageUrl);
+        if (isValid) {
+          blocks.push({
+            type: 'image',
+            image: {
+              type: 'external',
+              external: { url: imageUrl },
+              caption: altText ? [{ type: 'text', text: { content: altText } }] : [],
+            },
+          } as BlockObjectRequest);
+        } else {
+          console.log(`Skipping invalid image URL: ${imageUrl}`);
+        }
+
         i++;
         continue;
       }
@@ -823,7 +867,7 @@ export class NotionClient {
     }
 
     // 添加新内容
-    const newBlocks = this.convertContentToBlocks(content);
+    const newBlocks = await this.convertContentToBlocks(content);
     if (newBlocks.length > 0) {
       // Notion API 限制每次最多添加 100 个块
       for (let i = 0; i < newBlocks.length; i += 100) {

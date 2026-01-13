@@ -6,13 +6,14 @@ import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
 
 // 解析命令行参数
-function parseArgs(): { noCache: boolean; clearCache: boolean; command: 'posts' | 'links' } {
+function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidation: boolean; command: 'posts' | 'links' } {
   const args = process.argv.slice(2);
   const command = args.includes('links') ? 'links' : 'posts';
 
   return {
     noCache: args.includes('--no-cache'),
     clearCache: args.includes('--clear-cache'),
+    skipImageValidation: args.includes('--skip-image-validation'),
     command,
   };
 }
@@ -22,9 +23,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 // 同步文章
-async function syncPosts(noCache: boolean): Promise<void> {
+async function syncPosts(noCache: boolean, skipImageValidation: boolean): Promise<void> {
   const typechoClient = new TypechoClient(typechoDbConfig);
-  const notionClient = new NotionClient(notionConfig);
+  const notionClient = new NotionClient(notionConfig, skipImageValidation);
 
   const result: SyncResult = {
     total: 0,
@@ -269,7 +270,7 @@ async function main(): Promise<void> {
   if (args.command === 'links') {
     await syncLinks();
   } else {
-    await syncPosts(args.noCache);
+    await syncPosts(args.noCache, args.skipImageValidation);
   }
 }
 
