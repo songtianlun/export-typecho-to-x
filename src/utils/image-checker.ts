@@ -29,7 +29,18 @@ export async function checkImageUrl(url: string, redirectCount: number = 0): Pro
       const urlObj = new URL(url);
       const protocol = urlObj.protocol === 'https:' ? https : http;
 
-      const req = protocol.get(url, { timeout: TIMEOUT_MS }, async (res) => {
+      const options = {
+        timeout: TIMEOUT_MS,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+        },
+      };
+
+      const req = protocol.get(url, options, (res) => {
         const statusCode = res.statusCode || 0;
 
         // 检查是否为重定向状态码
@@ -51,10 +62,18 @@ export async function checkImageUrl(url: string, redirectCount: number = 0): Pro
             }
 
             // 递归跟随重定向
-            const result = await checkImageUrl(redirectUrl, redirectCount + 1);
-            resolve(result);
+            checkImageUrl(redirectUrl, redirectCount + 1).then(resolve);
             return;
           }
+
+          // 如果没有 location header，视为重定向失败
+          resolve({
+            url,
+            isValid: false,
+            statusCode,
+            error: `HTTP ${statusCode} (no location)`,
+          });
+          return;
         }
 
         // 检查是否为成功状态码
