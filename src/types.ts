@@ -35,6 +35,54 @@ export interface TypechoMeta {
   order: number;
 }
 
+// Typecho 评论数据结构
+export interface TypechoComment {
+  coid: number;        // 评论 ID
+  cid: number;         // 文章 ID
+  created: number;     // 创建时间 (Unix timestamp)
+  author: string;      // 评论者名称
+  authorId: number;    // 评论者用户 ID (0 表示游客)
+  ownerId: number;     // 文章作者 ID
+  mail: string;        // 邮箱
+  url: string;         // 网站 URL
+  ip: string;          // IP 地址
+  agent: string;       // User-Agent
+  text: string;        // 评论内容
+  type: string;        // 类型 (comment/trackback/pingback)
+  status: string;      // 状态 (approved/waiting/spam)
+  parent: number;      // 父评论 ID (0 表示顶层评论)
+}
+
+// Remark42 用户数据结构
+export interface Remark42User {
+  name: string;
+  id: string;
+  picture: string;
+  ip: string;
+  admin: boolean;
+  site_id: string;
+}
+
+// Remark42 定位器
+export interface Remark42Locator {
+  site: string;
+  url: string;
+}
+
+// Remark42 评论数据结构
+export interface Remark42Comment {
+  id: string;
+  pid: string;
+  text: string;
+  orig: string;
+  user: Remark42User;
+  locator: Remark42Locator;
+  score: number;
+  vote: number;
+  time: string;
+  title: string;
+}
+
 // 同步统计结果
 export interface SyncResult {
   total: number;

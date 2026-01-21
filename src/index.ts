@@ -3,20 +3,36 @@ import { TypechoClient } from './typecho/client';
 import { NotionClient } from './notion/client';
 import { NotionLinksClient } from './notion/links-client';
 import { MarkdownExporter } from './markdown/exporter';
+import { Remark42Exporter } from './remark42/exporter';
 import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
 import { cleanBrokenImageLinks } from './utils/image-checker';
 
 // 解析命令行参数
-function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidation: boolean; checkImageLinks: boolean; command: 'posts' | 'links' | 'markdown'; outputDir?: string } {
+function parseArgs(): {
+  noCache: boolean;
+  clearCache: boolean;
+  skipImageValidation: boolean;
+  checkImageLinks: boolean;
+  command: 'posts' | 'links' | 'markdown' | 'comments';
+  outputDir?: string;
+  outputFile?: string;
+  siteId?: string;
+  siteUrl?: string;
+} {
   const args = process.argv.slice(2);
-  let command: 'posts' | 'links' | 'markdown' = 'posts';
+  let command: 'posts' | 'links' | 'markdown' | 'comments' = 'posts';
   let outputDir: string | undefined;
+  let outputFile: string | undefined;
+  let siteId: string | undefined;
+  let siteUrl: string | undefined;
 
   if (args.includes('links')) {
     command = 'links';
   } else if (args.includes('markdown') || args.includes('export')) {
     command = 'markdown';
+  } else if (args.includes('comments')) {
+    command = 'comments';
   }
 
   // 解析 --output-dir 或 -o 参数
@@ -30,6 +46,39 @@ function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidati
     }
   }
 
+  // 解析 --output-file 或 -f 参数（用于 comments 命令）
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--output-file' || args[i] === '-f') {
+      outputFile = args[i + 1];
+      break;
+    } else if (args[i].startsWith('--output-file=')) {
+      outputFile = args[i].split('=')[1];
+      break;
+    }
+  }
+
+  // 解析 --site-id 参数
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--site-id') {
+      siteId = args[i + 1];
+      break;
+    } else if (args[i].startsWith('--site-id=')) {
+      siteId = args[i].split('=')[1];
+      break;
+    }
+  }
+
+  // 解析 --site-url 参数
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--site-url') {
+      siteUrl = args[i + 1];
+      break;
+    } else if (args[i].startsWith('--site-url=')) {
+      siteUrl = args[i].split('=')[1];
+      break;
+    }
+  }
+
   return {
     noCache: args.includes('--no-cache'),
     clearCache: args.includes('--clear-cache'),
@@ -37,6 +86,9 @@ function parseArgs(): { noCache: boolean; clearCache: boolean; skipImageValidati
     checkImageLinks: args.includes('--check-image-links'),
     command,
     outputDir,
+    outputFile,
+    siteId,
+    siteUrl,
   };
 }
 
@@ -419,6 +471,79 @@ async function exportToMarkdown(noCache: boolean, checkImageLinks: boolean, outp
   }
 }
 
+// 导出评论到 Remark42 格式
+async function exportCommentsToRemark42(
+  noCache: boolean,
+  siteId: string,
+  siteUrl: string,
+  outputFile?: string
+): Promise<void> {
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const exportFile = outputFile || './backup-remark42.json';
+  const remark42Exporter = new Remark42Exporter(exportFile, siteId, siteUrl);
+
+  console.log(`Site ID: ${siteId}`);
+  console.log(`Site URL: ${siteUrl}`);
+  console.log(`Output file: ${exportFile}`);
+  console.log();
+
+  try {
+    console.log('\nFetching posts and comments...');
+
+    let posts: TypechoPost[] = [];
+
+    if (!noCache) {
+      const cached = getCachedPosts();
+      if (cached) {
+        posts = cached;
+      }
+    } else {
+      console.log('Cache disabled (--no-cache)');
+    }
+
+    console.log('Connecting to Typecho database...');
+    await typechoClient.connect();
+
+    if (posts.length === 0) {
+      posts = await typechoClient.getPosts();
+      if (posts.length > 0) {
+        setCachedPosts(posts);
+      }
+    }
+
+    console.log(`Total posts: ${posts.length}`);
+
+    // 获取评论
+    const comments = await typechoClient.getComments();
+    console.log(`Total comments: ${comments.length}`);
+    console.log();
+
+    await typechoClient.close();
+
+    if (comments.length === 0) {
+      console.log('No comments to export.');
+      return;
+    }
+
+    console.log('Exporting comments to Remark42 format...');
+    console.log('-'.repeat(50));
+
+    await remark42Exporter.exportComments(comments, posts);
+
+    console.log('-'.repeat(50));
+    console.log();
+
+  } catch (error) {
+    console.error('Export error:', (error as Error).message);
+    await typechoClient.close();
+    throw error;
+  }
+
+  console.log('='.repeat(50));
+  console.log('Export completed!');
+  console.log('='.repeat(50));
+}
+
 // 打印同步统计
 function printSummary(result: SyncResult, type: string): void {
   console.log('='.repeat(50));
@@ -476,6 +601,27 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     await exportToMarkdown(args.noCache, args.checkImageLinks, args.outputDir);
+  } else if (args.command === 'comments') {
+    try {
+      validateExportConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+
+    // 验证必需参数
+    if (!args.siteId) {
+      console.error('Error: --site-id is required for comments export');
+      console.error('Usage: npm run dev -- comments --site-id=example.com --site-url=https://example.com [--output-file=./backup.json]');
+      process.exit(1);
+    }
+    if (!args.siteUrl) {
+      console.error('Error: --site-url is required for comments export');
+      console.error('Usage: npm run dev -- comments --site-id=example.com --site-url=https://example.com [--output-file=./backup.json]');
+      process.exit(1);
+    }
+
+    await exportCommentsToRemark42(args.noCache, args.siteId, args.siteUrl, args.outputFile);
   } else {
     await syncPosts(args.noCache, args.skipImageValidation, args.checkImageLinks);
   }

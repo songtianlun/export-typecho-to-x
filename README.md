@@ -1,14 +1,15 @@
 # Sync Typecho to Notion
 
-将 Typecho 博客文章同步到 Notion 数据库或导出为 Markdown 文件的命令行工具。
+将 Typecho 博客文章同步到 Notion 数据库，或导出为 Markdown 文件，或导出评论到 Remark42 的命令行工具。
 
-A CLI tool to sync Typecho blog posts to Notion database or export as Markdown files.
+A CLI tool to sync Typecho blog posts to Notion database, export as Markdown files, or export comments to Remark42.
 
 ## 功能 | Features
 
 - 从 Typecho PostgreSQL 数据库读取文章 | Read posts from Typecho PostgreSQL database
 - 同步标题、内容、分类、标签、发布状态到 Notion | Sync title, content, categories, tags, status to Notion
 - **导出文章为 Markdown 文件（带 frontmatter）| Export posts as Markdown files with frontmatter**
+- **导出评论到 Remark42 备份格式 | Export comments to Remark42 backup format**
 - **检查并移除失效的图片链接（可选）| Check and remove broken image links (optional)**
 - 自动创建 Notion 数据库缺失的属性字段 | Auto-create missing Notion database properties
 - 通过 slug 判断文章是否已存在，支持增量更新 | Incremental sync based on slug
@@ -155,6 +156,62 @@ Use `--check-image-links` parameter to enable image link checking. When enabled,
 - 自动跟随重定向，避免误判 301/302 为失效链接 | Auto-follow redirects to avoid false positives on 301/302
 - 仅检查图片 URL 是否返回 200，不验证图片内容 | Only checks if URL returns 200, doesn't validate image content
 
+### 导出评论到 Remark42 | Export Comments to Remark42
+
+将 Typecho 评论导出为 Remark42 备份格式的 JSON 文件，可直接导入到 Remark42 评论系统。
+
+Export Typecho comments to Remark42 backup format JSON file, which can be directly imported into Remark42 comment system.
+
+**导出格式示例 | Export Format Example:**
+
+```json
+{"version":1,"users":[],"posts":[]}
+{"id":"fa93c88b-e757-499e-866e-16ca49b087b0","pid":"","text":"<p>test</p>\n","orig":"test","user":{"name":"songtianlun","id":"anonymous_c311908b44c31caf06c29455d33dec2015f59119","picture":"https://remark42.frytea.com/api/v1/avatar/5c3d2dd7464439b511629d73e2bbd7df8471b4b8.image","ip":"6586f6e8eea7f1408f4afae13b8808da43e12905","admin":false,"site_id":"frytea.com"},"locator":{"site":"frytea.com","url":"https://frytea.com/about.html"},"score":1,"vote":0,"time":"2026-01-05T00:01:48.363159105+08:00","title":"关于 - Oskyla 烹茶室"}
+```
+
+**使用方法 | Usage:**
+
+```bash
+# 基本用法（必需参数）| Basic usage (required parameters)
+npm run dev -- comments --site-id=frytea.com --site-url=https://frytea.com
+
+# 指定输出文件 | Specify output file
+npm run dev -- comments --site-id=frytea.com --site-url=https://frytea.com --output-file=./backup-frytea.json
+
+# 使用短参数 | Use short parameters
+npm run dev -- comments --site-id=frytea.com --site-url=https://frytea.com -f ./backup.json
+
+# 跳过缓存 | Skip cache
+npm run dev -- comments --site-id=frytea.com --site-url=https://frytea.com --no-cache
+
+# 完整示例 | Full example
+npm run dev -- comments --site-id=frytea.com --site-url=https://frytea.com -f ./backup-remark42.json --no-cache
+```
+
+**参数说明 | Parameters:**
+
+- `--site-id` (必需/Required)：站点 ID，与 Remark42 配置保持一致 | Site ID, must match Remark42 configuration
+- `--site-url` (必需/Required)：站点 URL，用于生成文章链接 | Site URL, used to generate post links
+- `--output-file` 或 `-f` (可选/Optional)：输出文件路径，默认 `./backup-remark42.json` | Output file path, default `./backup-remark42.json`
+- `--no-cache` (可选/Optional)：跳过缓存，重新从数据库获取数据 | Skip cache, fetch data from database
+
+**特性 | Features:**
+
+- ✅ 导出所有已审核通过的评论 | Export all approved comments
+- ✅ 保留评论层级关系（回复）| Preserve comment hierarchy (replies)
+- ✅ 自动生成 UUID 格式的评论 ID | Auto-generate UUID format comment IDs
+- ✅ 生成 Gravatar 头像链接 | Generate Gravatar avatar links
+- ✅ IP 地址哈希处理 | Hash IP addresses for privacy
+- ✅ 与 Remark42 备份格式完全兼容 | Fully compatible with Remark42 backup format
+
+**导入到 Remark42 | Import to Remark42:**
+
+```bash
+# 使用 remark42 命令导入备份文件
+remark42 import -f ./backup-remark42.json -s frytea.com
+```
+
+
 ### 本地运行 | Local
 
 ```bash
@@ -270,6 +327,11 @@ npm run dev -- markdown --output-dir=/path/to/export
 npm run dev -- markdown --no-cache                         # 跳过缓存 / Skip cache
 npm run dev -- markdown --check-image-links                # 检查并移除失效图片 / Check and remove broken images
 npm run dev -- markdown -o ./blog --check-image-links      # 组合使用 / Combined
+
+# 导出评论到 Remark42 | Export comments to Remark42
+npm run dev -- comments --site-id=example.com --site-url=https://example.com           # 基本用法 / Basic usage
+npm run dev -- comments --site-id=example.com --site-url=https://example.com -f ./backup.json   # 指定输出文件 / Specify output file
+npm run dev -- comments --site-id=example.com --site-url=https://example.com --no-cache         # 跳过缓存 / Skip cache
 ```
 
 ## Notion 数据库字段 | Database Fields

@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { DatabaseConfig, TypechoPost, TypechoMeta, TypechoLink } from '../types';
+import { DatabaseConfig, TypechoPost, TypechoMeta, TypechoLink, TypechoComment } from '../types';
 
 export class TypechoClient {
   private pool: Pool;
@@ -124,6 +124,50 @@ export class TypechoClient {
       description: row.description || '',
       user: row.user || '',
       order: row.order || 0,
+    }));
+  }
+
+  // 获取所有评论
+  async getComments(): Promise<TypechoComment[]> {
+    const commentsTable = this.table('comments');
+
+    const result = await this.pool.query<{
+      coid: number;
+      cid: number;
+      created: number;
+      author: string;
+      authorId: number;
+      ownerId: number;
+      mail: string;
+      url: string;
+      ip: string;
+      agent: string;
+      text: string;
+      type: string;
+      status: string;
+      parent: number;
+    }>(`
+      SELECT coid, cid, created, author, "authorId", "ownerId", mail, url, ip, agent, text, type, status, parent
+      FROM ${commentsTable}
+      WHERE status = 'approved' AND type = 'comment'
+      ORDER BY created ASC
+    `);
+
+    return result.rows.map((row) => ({
+      coid: row.coid,
+      cid: row.cid,
+      created: row.created,
+      author: row.author || 'Anonymous',
+      authorId: row.authorId || 0,
+      ownerId: row.ownerId || 0,
+      mail: row.mail || '',
+      url: row.url || '',
+      ip: row.ip || '',
+      agent: row.agent || '',
+      text: row.text || '',
+      type: row.type || 'comment',
+      status: row.status || 'approved',
+      parent: row.parent || 0,
     }));
   }
 
