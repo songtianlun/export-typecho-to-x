@@ -135,25 +135,18 @@ async function runWithConcurrencyLimit<T, R>(
   fn: (item: T) => Promise<R>
 ): Promise<R[]> {
   const results: R[] = [];
-  const executing: Promise<void>[] = [];
+  let index = 0;
 
-  for (const [index, item] of items.entries()) {
-    const promise = fn(item).then((result) => {
-      results[index] = result;
-    });
-
-    executing.push(promise);
-
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-      executing.splice(
-        executing.findIndex((p) => p === promise),
-        1
-      );
+  // 创建工作池，每个 worker 依次处理队列中的项目
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const currentIndex = index++;
+      const item = items[currentIndex];
+      results[currentIndex] = await fn(item);
     }
-  }
+  });
 
-  await Promise.all(executing);
+  await Promise.all(workers);
   return results;
 }
 
@@ -210,6 +203,9 @@ export async function cleanBrokenImageLinks(
 
   // 移除失效的图片链接
   for (const result of validityResults) {
+    // 安全检查：过滤掉可能的 undefined 结果
+    if (!result) continue;
+
     if (!result.isValid) {
       // 移除整个 ![...](...) 语法
       const imagePattern = new RegExp(`!\\\\[.*?\\\\]\\\\(${escapeRegExp(result.url)}\\\\)`, 'g');
