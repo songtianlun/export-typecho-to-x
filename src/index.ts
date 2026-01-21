@@ -65,6 +65,7 @@ async function syncPosts(noCache: boolean, skipImageValidation: boolean, checkIm
   // 图片检查统计
   let totalImagesChecked = 0;
   let totalImagesRemoved = 0;
+  const allBrokenImages: Array<{ url: string; statusCode?: number; error?: string }> = [];
 
   let posts: TypechoPost[] = [];
 
@@ -139,6 +140,7 @@ async function syncPosts(noCache: boolean, skipImageValidation: boolean, checkIm
 
         totalImagesChecked += cleanResult.totalChecked;
         totalImagesRemoved += cleanResult.removedCount;
+        allBrokenImages.push(...cleanResult.brokenImages);
 
         if (existing) {
           // PG 的修改时间更新，执行更新
@@ -176,6 +178,18 @@ async function syncPosts(noCache: boolean, skipImageValidation: boolean, checkIm
   if (checkImageLinks && totalImagesChecked > 0) {
     console.log();
     console.log('Image Check Summary:');
+
+    // 先打印破损图片清单
+    if (allBrokenImages.length > 0) {
+      console.log();
+      console.log('Broken Images:');
+      for (const img of allBrokenImages) {
+        console.log(`  [IMAGE] ${img.url} - ${img.error || `HTTP ${img.statusCode}`}`);
+      }
+      console.log();
+    }
+
+    // 再打印统计信息
     console.log(`  Total images checked: ${totalImagesChecked}`);
     console.log(`  Total images removed: ${totalImagesRemoved}`);
   }
@@ -292,6 +306,7 @@ async function exportToMarkdown(noCache: boolean, checkImageLinks: boolean, outp
   // 图片检查统计
   let totalImagesChecked = 0;
   let totalImagesRemoved = 0;
+  const allBrokenImages: Array<{ url: string; statusCode?: number; error?: string }> = [];
 
   let posts: TypechoPost[] = [];
 
@@ -351,6 +366,7 @@ async function exportToMarkdown(noCache: boolean, checkImageLinks: boolean, outp
 
         totalImagesChecked += cleanResult.totalChecked;
         totalImagesRemoved += cleanResult.removedCount;
+        allBrokenImages.push(...cleanResult.brokenImages);
 
         // 重新导出清理后的文章
         await markdownExporter.exportPost(cleanedPost);
@@ -386,6 +402,18 @@ async function exportToMarkdown(noCache: boolean, checkImageLinks: boolean, outp
   if (checkImageLinks && totalImagesChecked > 0) {
     console.log();
     console.log('Image Check Summary:');
+
+    // 先打印破损图片清单
+    if (allBrokenImages.length > 0) {
+      console.log();
+      console.log('Broken Images:');
+      for (const img of allBrokenImages) {
+        console.log(`  [IMAGE] ${img.url} - ${img.error || `HTTP ${img.statusCode}`}`);
+      }
+      console.log();
+    }
+
+    // 再打印统计信息
     console.log(`  Total images checked: ${totalImagesChecked}`);
     console.log(`  Total images removed: ${totalImagesRemoved}`);
   }

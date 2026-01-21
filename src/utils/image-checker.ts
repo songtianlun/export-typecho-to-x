@@ -18,6 +18,14 @@ export interface ImageCheckResult {
   error?: string;
 }
 
+// 清理结果接口
+export interface CleanResult {
+  content: string;
+  removedCount: number;
+  totalChecked: number;
+  brokenImages: ImageCheckResult[];
+}
+
 /**
  * 检查图片 URL 是否有效（返回 200 状态码，支持跟随重定向）
  * @param url 图片 URL
@@ -176,18 +184,19 @@ export function extractImageUrls(markdown: string): string[] {
 export async function cleanBrokenImageLinks(
   markdown: string,
   checkLinks: boolean
-): Promise<{ content: string; removedCount: number; totalChecked: number }> {
+): Promise<CleanResult> {
   if (!checkLinks) {
-    return { content: markdown, removedCount: 0, totalChecked: 0 };
+    return { content: markdown, removedCount: 0, totalChecked: 0, brokenImages: [] };
   }
 
   const imageUrls = extractImageUrls(markdown);
   if (imageUrls.length === 0) {
-    return { content: markdown, removedCount: 0, totalChecked: 0 };
+    return { content: markdown, removedCount: 0, totalChecked: 0, brokenImages: [] };
   }
 
   let cleanedContent = markdown;
   let removedCount = 0;
+  const brokenImages: ImageCheckResult[] = [];
 
   // 并发检查所有图片 URL
   const validityResults = await runWithConcurrencyLimit(
@@ -195,10 +204,6 @@ export async function cleanBrokenImageLinks(
     MAX_CONCURRENT_CHECKS,
     async (url) => {
       const result = await checkImageUrl(url);
-      // 立即打印检查失败的图片
-      if (!result.isValid) {
-        console.log(`  [IMAGE] ${result.url} - ${result.error || `HTTP ${result.statusCode}`}`);
-      }
       return result;
     }
   );
@@ -207,13 +212,14 @@ export async function cleanBrokenImageLinks(
   for (const result of validityResults) {
     if (!result.isValid) {
       // 移除整个 ![...](...) 语法
-      const imagePattern = new RegExp(`!\\[.*?\\]\\(${escapeRegExp(result.url)}\\)`, 'g');
+      const imagePattern = new RegExp(`!\\\\[.*?\\\\]\\\\(${escapeRegExp(result.url)}\\\\)`, 'g');
       cleanedContent = cleanedContent.replace(imagePattern, '');
       removedCount++;
+      brokenImages.push(result);
     }
   }
 
-  return { content: cleanedContent, removedCount, totalChecked: imageUrls.length };
+  return { content: cleanedContent, removedCount, totalChecked: imageUrls.length, brokenImages };
 }
 
 /**
