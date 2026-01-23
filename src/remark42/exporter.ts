@@ -55,9 +55,6 @@ export class Remark42Exporter {
     // 生成用户 ID
     const userId = this.generateUserId(comment.author, comment.mail);
 
-    // 生成头像 URL (使用 Gravatar)
-    const picture = this.generateGravatarUrl(comment.mail);
-
     // 对 IP 进行哈希处理
     const ipHash = this.hashIp(comment.ip);
 
@@ -78,7 +75,6 @@ export class Remark42Exporter {
       user: {
         name: comment.author,
         id: userId,
-        picture,
         ip: ipHash,
         admin: comment.authorId > 0, // 登录用户视为 admin
         site_id: this.siteId,
@@ -122,18 +118,6 @@ export class Remark42Exporter {
       const hash = crypto.createHash('sha1').update(author).digest('hex');
       return `anonymous_${hash}`;
     }
-  }
-
-  /**
-   * 生成 Gravatar 头像 URL
-   */
-  private generateGravatarUrl(email: string): string {
-    if (!email) {
-      return `https://${this.siteId}/api/v1/avatar/default.image`;
-    }
-
-    const hash = crypto.createHash('md5').update(email.toLowerCase().trim()).digest('hex');
-    return `https://${this.siteId}/api/v1/avatar/${hash}.image`;
   }
 
   /**

@@ -57,7 +57,7 @@ export interface TypechoComment {
 export interface Remark42User {
   name: string;
   id: string;
-  picture: string;
+  picture?: string;  // 可选，不设置则使用 remark42 默认头像
   ip: string;
   admin: boolean;
   site_id: string;
