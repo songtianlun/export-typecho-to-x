@@ -488,7 +488,7 @@ async function exportCommentsToRemark42(
   console.log();
 
   try {
-    console.log('\nFetching posts and comments...');
+    console.log('\nFetching posts, pages and comments...');
 
     let posts: TypechoPost[] = [];
 
@@ -511,7 +511,14 @@ async function exportCommentsToRemark42(
       }
     }
 
+    // 获取页面
+    const pages = await typechoClient.getPages();
     console.log(`Total posts: ${posts.length}`);
+    console.log(`Total pages: ${pages.length}`);
+
+    // 合并文章和页面
+    const allContents = [...posts, ...pages];
+    console.log(`Total contents: ${allContents.length}`);
 
     // 获取评论
     const comments = await typechoClient.getComments();
@@ -528,7 +535,7 @@ async function exportCommentsToRemark42(
     console.log('Exporting comments to Remark42 format...');
     console.log('-'.repeat(50));
 
-    await remark42Exporter.exportComments(comments, posts);
+    await remark42Exporter.exportComments(comments, allContents);
 
     console.log('-'.repeat(50));
     console.log();

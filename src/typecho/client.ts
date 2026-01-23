@@ -36,12 +36,22 @@ export class TypechoClient {
 
   // 获取所有文章
   async getPosts(): Promise<TypechoPost[]> {
+    return this.getContents('post');
+  }
+
+  // 获取所有页面
+  async getPages(): Promise<TypechoPost[]> {
+    return this.getContents('page');
+  }
+
+  // 获取指定类型的内容（文章或页面）
+  private async getContents(type: 'post' | 'page'): Promise<TypechoPost[]> {
     const contentsTable = this.table('contents');
     const relationshipsTable = this.table('relationships');
     const metasTable = this.table('metas');
 
-    // 查询所有已发布/草稿文章
-    const postsResult = await this.pool.query<{
+    // 查询所有已发布/草稿内容
+    const contentsResult = await this.pool.query<{
       cid: number;
       title: string;
       slug: string;
@@ -53,14 +63,14 @@ export class TypechoClient {
     }>(`
       SELECT cid, title, slug, created, modified, text, status, type
       FROM ${contentsTable}
-      WHERE type = 'post'
+      WHERE type = $1
       ORDER BY created DESC
-    `);
+    `, [type]);
 
-    const posts: TypechoPost[] = [];
+    const contents: TypechoPost[] = [];
 
-    for (const row of postsResult.rows) {
-      // 获取该文章的分类和标签
+    for (const row of contentsResult.rows) {
+      // 获取该内容的分类和标签
       const metasResult = await this.pool.query<TypechoMeta>(`
         SELECT m.mid, m.name, m.slug, m.type, m.description, m.count, m."order"
         FROM ${metasTable} m
@@ -79,7 +89,7 @@ export class TypechoClient {
         }
       }
 
-      posts.push({
+      contents.push({
         cid: row.cid,
         title: row.title,
         slug: row.slug,
@@ -93,7 +103,7 @@ export class TypechoClient {
       });
     }
 
-    return posts;
+    return contents;
   }
 
   // 获取所有友链 (handsome 主题)
