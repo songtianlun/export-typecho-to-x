@@ -4,6 +4,7 @@ import { NotionClient } from './notion/client';
 import { NotionLinksClient } from './notion/links-client';
 import { MarkdownExporter } from './markdown/exporter';
 import { Remark42Exporter } from './remark42/exporter';
+import { MxSpaceExporter } from './mxspace/exporter';
 import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
 import { cleanBrokenImageLinks } from './utils/image-checker';
@@ -14,14 +15,14 @@ function parseArgs(): {
   clearCache: boolean;
   skipImageValidation: boolean;
   checkImageLinks: boolean;
-  command: 'posts' | 'links' | 'markdown' | 'comments';
+  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace';
   outputDir?: string;
   outputFile?: string;
   siteId?: string;
   siteUrl?: string;
 } {
   const args = process.argv.slice(2);
-  let command: 'posts' | 'links' | 'markdown' | 'comments' = 'posts';
+  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' = 'posts';
   let outputDir: string | undefined;
   let outputFile: string | undefined;
   let siteId: string | undefined;
@@ -33,6 +34,8 @@ function parseArgs(): {
     command = 'markdown';
   } else if (args.includes('comments')) {
     command = 'comments';
+  } else if (args.includes('mxspace')) {
+    command = 'mxspace';
   }
 
   // 解析 --output-dir 或 -o 参数
@@ -551,6 +554,74 @@ async function exportCommentsToRemark42(
   console.log('='.repeat(50));
 }
 
+// 导出到 MxSpace
+async function exportToMxSpace(noCache: boolean, outputDir?: string): Promise<void> {
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const exportDir = outputDir || './mxspace-export';
+  const mxSpaceExporter = new MxSpaceExporter(exportDir);
+
+  console.log(`Export directory: ${exportDir}`);
+  console.log();
+
+  try {
+    console.log('\nFetching posts, pages, categories and comments...');
+
+    let posts: TypechoPost[] = [];
+
+    if (!noCache) {
+      const cached = getCachedPosts();
+      if (cached) {
+        posts = cached;
+      }
+    } else {
+      console.log('Cache disabled (--no-cache)');
+    }
+
+    console.log('Connecting to Typecho database...');
+    await typechoClient.connect();
+
+    if (posts.length === 0) {
+      posts = await typechoClient.getPosts();
+      if (posts.length > 0) {
+        setCachedPosts(posts);
+      }
+    }
+
+    // 获取页面
+    const pages = await typechoClient.getPages();
+    console.log(`Total posts: ${posts.length}`);
+    console.log(`Total pages: ${pages.length}`);
+
+    // 获取分类
+    const categories = await typechoClient.getCategories();
+    console.log(`Total categories: ${categories.length}`);
+
+    // 获取评论
+    const comments = await typechoClient.getComments();
+    console.log(`Total comments: ${comments.length}`);
+    console.log();
+
+    await typechoClient.close();
+
+    console.log('Exporting to MxSpace format...');
+    console.log('-'.repeat(50));
+
+    await mxSpaceExporter.exportToMxSpace(posts, pages, categories, comments);
+
+    console.log('-'.repeat(50));
+    console.log();
+
+  } catch (error) {
+    console.error('Export error:', (error as Error).message);
+    await typechoClient.close();
+    throw error;
+  }
+
+  console.log('='.repeat(50));
+  console.log('Export completed!');
+  console.log('='.repeat(50));
+}
+
 // 打印同步统计
 function printSummary(result: SyncResult, type: string): void {
   console.log('='.repeat(50));
@@ -629,6 +700,14 @@ async function main(): Promise<void> {
     }
 
     await exportCommentsToRemark42(args.noCache, args.siteId, args.siteUrl, args.outputFile);
+  } else if (args.command === 'mxspace') {
+    try {
+      validateExportConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+    await exportToMxSpace(args.noCache, args.outputDir);
   } else {
     await syncPosts(args.noCache, args.skipImageValidation, args.checkImageLinks);
   }

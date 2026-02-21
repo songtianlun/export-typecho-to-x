@@ -9,6 +9,7 @@ A CLI tool to sync Typecho blog posts to Notion database, export as Markdown fil
 - 从 Typecho PostgreSQL 数据库读取文章 | Read posts from Typecho PostgreSQL database
 - 同步标题、内容、分类、标签、发布状态到 Notion | Sync title, content, categories, tags, status to Notion
 - **导出文章为 Markdown 文件（带 frontmatter）| Export posts as Markdown files with frontmatter**
+- **导出到 Mix-Space BSON 格式 | Export to Mix-Space BSON format**
 - **导出评论到 Remark42 备份格式 | Export comments to Remark42 backup format**
 - **检查并移除失效的图片链接（可选）| Check and remove broken image links (optional)**
 - 自动创建 Notion 数据库缺失的属性字段 | Auto-create missing Notion database properties
@@ -211,6 +212,58 @@ npm run dev -- comments --site-id=frytea.com --site-url=https://frytea.com -f ./
 remark42 import -f ./backup-remark42.json -s frytea.com
 ```
 
+### 导出到 Mix-Space | Export to Mix-Space
+
+将 Typecho 文章、页面、分类和评论导出为 Mix-Space BSON 格式，可直接导入到 Mix-Space 博客系统的 MongoDB 数据库。
+
+Export Typecho posts, pages, categories and comments to Mix-Space BSON format, which can be directly imported into Mix-Space blog system's MongoDB database.
+
+**导出文件 | Output Files:**
+
+```
+mxspace-export/
+├── categories.bson  # 分类数据 | Categories data
+├── posts.bson       # 文章数据 | Posts data
+├── pages.bson       # 页面数据 | Pages data
+└── comments.bson    # 评论数据 | Comments data
+```
+
+**使用方法 | Usage:**
+
+```bash
+# 基本用法（导出到默认目录 ./mxspace-export）| Basic usage (export to default ./mxspace-export)
+npm run dev -- mxspace
+
+# 指定导出目录 | Specify export directory
+npm run dev -- mxspace -o ./my-mxspace-export
+npm run dev -- mxspace --output-dir=/path/to/export
+
+# 跳过缓存 | Skip cache
+npm run dev -- mxspace --no-cache
+
+# 完整示例 | Full example
+npm run dev -- mxspace -o ./mxspace-backup --no-cache
+```
+
+**特性 | Features:**
+
+- ✅ 导出所有文章、页面、分类 | Export all posts, pages, categories
+- ✅ 导出所有已审核评论 | Export all approved comments
+- ✅ 保留评论层级关系 | Preserve comment hierarchy
+- ✅ 自动生成 MongoDB ObjectId | Auto-generate MongoDB ObjectIds
+- ✅ 提取文章中的图片信息 | Extract image information from posts
+- ✅ 与 Mix-Space 数据格式完全兼容 | Fully compatible with Mix-Space data format
+
+**导入到 Mix-Space | Import to Mix-Space:**
+
+```bash
+# 使用 mongorestore 导入 BSON 文件到 MongoDB
+mongorestore --db=mx-space --collection=categories ./mxspace-export/categories.bson
+mongorestore --db=mx-space --collection=posts ./mxspace-export/posts.bson
+mongorestore --db=mx-space --collection=pages ./mxspace-export/pages.bson
+mongorestore --db=mx-space --collection=comments ./mxspace-export/comments.bson
+```
+
 
 ### 本地运行 | Local
 
@@ -332,6 +385,12 @@ npm run dev -- markdown -o ./blog --check-image-links      # 组合使用 / Comb
 npm run dev -- comments --site-id=example.com --site-url=https://example.com           # 基本用法 / Basic usage
 npm run dev -- comments --site-id=example.com --site-url=https://example.com -f ./backup.json   # 指定输出文件 / Specify output file
 npm run dev -- comments --site-id=example.com --site-url=https://example.com --no-cache         # 跳过缓存 / Skip cache
+
+# 导出到 Mix-Space | Export to Mix-Space
+npm run dev -- mxspace                                                 # 导出到默认目录 ./mxspace-export / Export to default ./mxspace-export
+npm run dev -- mxspace -o ./my-export                                  # 指定导出目录 / Specify directory
+npm run dev -- mxspace --output-dir=/path/to/export
+npm run dev -- mxspace --no-cache                                      # 跳过缓存 / Skip cache
 ```
 
 ## Notion 数据库字段 | Database Fields

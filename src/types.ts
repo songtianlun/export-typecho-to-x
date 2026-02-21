@@ -116,3 +116,55 @@ export interface NotionConfig {
   apiKey: string;
   databaseId: string;
 }
+
+// MxSpace 数据结构
+export interface MxCategory {
+  _id: string;
+  name: string;
+  slug: string;
+  type: number;
+  created: string;
+}
+
+export interface MxPost {
+  _id: string;
+  created: string;
+  modified: string;
+  title: string;
+  text: string;
+  slug: string;
+  categoryId: string;
+  tags: string[];
+  allowComment: boolean;
+  images: any[];
+  count: {
+    read: number;
+    like: number;
+  };
+}
+
+export interface MxPage {
+  _id: string;
+  created: string;
+  modified: string;
+  title: string;
+  text: string;
+  slug: string;
+  allowComment: boolean;
+  order: number;
+}
+
+export interface MxComment {
+  _id: string;
+  ref: string;
+  refType: string;
+  author: string;
+  mail: string;
+  url: string;
+  text: string;
+  state: number;
+  children: string[];
+  parent?: string;
+  key: string;
+  created: string;
+}

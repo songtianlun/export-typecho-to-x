@@ -16,16 +16,20 @@ function getEnvOrDefault(key: string, defaultValue: string): string {
   return process.env[key] || defaultValue;
 }
 
-// Notion 配置
+function getEnvOptional(key: string): string | undefined {
+  return process.env[key];
+}
+
+// Notion 配置（可能不存在，用于导出场景）
 export const notionConfig: NotionConfig = {
-  apiKey: getEnvOrThrow('NOTION_KEY'),
-  databaseId: getEnvOrThrow('NOTION_DATABASE_ID'),
+  apiKey: getEnvOptional('NOTION_KEY') || '',
+  databaseId: getEnvOptional('NOTION_DATABASE_ID') || '',
 };
 
 // Notion 友链数据库配置（可选）
 export const notionLinksConfig: NotionConfig | null = process.env.NOTION_LINKS_DATABASE_ID
   ? {
-      apiKey: getEnvOrThrow('NOTION_KEY'),
+      apiKey: getEnvOptional('NOTION_KEY') || '',
       databaseId: process.env.NOTION_LINKS_DATABASE_ID,
     }
   : null;
@@ -48,6 +52,10 @@ export const markdownExportDir = getEnvOrDefault('MARKDOWN_EXPORT_DIR', './posts
 
 // 验证配置
 export function validateConfig(): void {
+  if (!notionConfig.apiKey || !notionConfig.databaseId) {
+    throw new Error('Missing required Notion configuration. Please set NOTION_KEY and NOTION_DATABASE_ID in your .env file.');
+  }
+
   if (dbAdapter !== 'postgresql') {
     throw new Error(`Unsupported database adapter: ${dbAdapter}. Currently only 'postgresql' is supported.`);
   }

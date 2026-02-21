@@ -137,6 +137,20 @@ export class TypechoClient {
     }));
   }
 
+  // 获取所有分类
+  async getCategories(): Promise<TypechoMeta[]> {
+    const metasTable = this.table('metas');
+
+    const result = await this.pool.query<TypechoMeta>(`
+      SELECT mid, name, slug, type, description, count, "order"
+      FROM ${metasTable}
+      WHERE type = 'category'
+      ORDER BY "order" ASC
+    `);
+
+    return result.rows;
+  }
+
   // 获取所有评论
   async getComments(): Promise<TypechoComment[]> {
     const commentsTable = this.table('comments');
