@@ -113,6 +113,15 @@ export class MxSpaceExporter {
 
     // 第二遍：构建评论数据和层级关系
     const childrenMap = new Map<number, number[]>(); // parent coid -> child coids
+    const contentTypeMap = new Map<number, 'posts' | 'pages'>(); // cid -> type
+
+    // 记录每个 content 的类型（post 或 page）
+    for (const post of posts) {
+      contentTypeMap.set(post.cid, 'posts');
+    }
+    for (const page of pages) {
+      contentTypeMap.set(page.cid, 'pages');
+    }
 
     for (const comment of comments) {
       if (comment.parent > 0) {
@@ -126,14 +135,12 @@ export class MxSpaceExporter {
     for (const comment of comments) {
       const _id = commentIdMap.get(comment.coid)!;
       const refId = contentMap.get(comment.cid);
+      const refType = contentTypeMap.get(comment.cid);
 
-      if (!refId) {
+      if (!refId || !refType) {
         console.warn(`Warning: Content not found for comment ${comment.coid}, skipping...`);
         continue;
       }
-
-      // 计算评论层级 key (如 "0.1.2")
-      const key = this.calculateCommentKey(comment.coid, comment.parent, comments);
 
       // 获取子评论 IDs
       const children: string[] = [];
@@ -149,14 +156,14 @@ export class MxSpaceExporter {
       const mxComment: MxComment = {
         _id: _id.toString(),
         ref: refId.toString(),
-        refType: 'Post', // 假设都是 Post，如果需要区分可以根据 contentMap 来判断
+        refType, // 使用实际的类型：'posts' 或 'pages'
         author: comment.author,
         mail: comment.mail,
         url: comment.url,
         text: comment.text,
         state: comment.status === 'approved' ? 1 : 0,
         children,
-        key,
+        key: '', // 先留空，稍后计算
         created: new Date(comment.created * 1000).toISOString(),
       };
 
@@ -171,6 +178,9 @@ export class MxSpaceExporter {
       mxComments.push(mxComment);
     }
 
+    // 第三遍：计算 comment key 和 commentIndex
+    this.assignCommentKeys(mxComments, posts, pages);
+
     // 写入 BSON 文件
     this.writeBsonFile('categories.bson', mxCategories);
     this.writeBsonFile('posts.bson', mxPosts);
@@ -181,6 +191,50 @@ export class MxSpaceExporter {
     console.log(`Exported ${mxPosts.length} posts to ${path.join(this.outputDir, 'posts.bson')}`);
     console.log(`Exported ${mxPages.length} pages to ${path.join(this.outputDir, 'pages.bson')}`);
     console.log(`Exported ${mxComments.length} comments to ${path.join(this.outputDir, 'comments.bson')}`);
+  }
+
+  /**
+   * 分配评论的 key 和 commentIndex
+   * 格式：顶层评论为 "#1", 子评论为 "#1#1", "#1#2" 等
+   */
+  private assignCommentKeys(comments: MxComment[], posts: TypechoPost[], pages: TypechoPost[]): void {
+    // 为每个 post/page 创建一个评论索引计数器
+    const commentsIndexMap = new Map<string, number>();
+
+    // 初始化所有 content 的索引为 0
+    for (const post of posts) {
+      commentsIndexMap.set(post.cid.toString(), 0);
+    }
+    for (const page of pages) {
+      commentsIndexMap.set(page.cid.toString(), 0);
+    }
+
+    // 为每个评论创建一个子评论索引计数器
+    const commentIndexMap = new Map<string, number>();
+
+    // 处理评论，按创建时间排序
+    const sortedComments = [...comments].sort((a, b) => {
+      return new Date(a.created).getTime() - new Date(b.created).getTime();
+    });
+
+    for (const comment of sortedComments) {
+      if (!comment.parent) {
+        // 顶层评论
+        const currentIndex = (commentsIndexMap.get(comment.ref) || 0) + 1;
+        commentsIndexMap.set(comment.ref, currentIndex);
+        comment.key = `#${currentIndex}`;
+        commentIndexMap.set(comment._id, 0);
+      } else {
+        // 子评论
+        const parentComment = comments.find(c => c._id === comment.parent);
+        if (parentComment) {
+          const currentIndex = (commentIndexMap.get(comment.parent) || 0) + 1;
+          commentIndexMap.set(comment.parent, currentIndex);
+          comment.key = `${parentComment.key}#${currentIndex}`;
+          commentIndexMap.set(comment._id, 0);
+        }
+      }
+    }
   }
 
   /**
@@ -204,31 +258,6 @@ export class MxSpaceExporter {
     }
 
     return images;
-  }
-
-  /**
-   * 计算评论的层级 key
-   * 格式如：顶层评论为 "0", 第一层子评论为 "0.1", 第二层为 "0.1.1"
-   */
-  private calculateCommentKey(coid: number, parent: number, allComments: TypechoComment[]): string {
-    if (parent === 0) {
-      return '0';
-    }
-
-    // 找到父评论
-    const parentComment = allComments.find(c => c.coid === parent);
-    if (!parentComment) {
-      return '0';
-    }
-
-    // 递归获取父评论的 key
-    const parentKey = this.calculateCommentKey(parent, parentComment.parent, allComments);
-
-    // 计算当前评论在同级评论中的位置
-    const siblings = allComments.filter(c => c.parent === parent);
-    const index = siblings.findIndex(c => c.coid === coid);
-
-    return `${parentKey}.${index + 1}`;
   }
 
   /**
