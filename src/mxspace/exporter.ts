@@ -64,6 +64,12 @@ export class MxSpaceExporter {
       // 提取图片
       const images = this.extractImages(post.text);
 
+      // 根据 Typecho 的 status 设置发布状态
+      const isPublished = post.status === 'publish';
+      const publicAt = isPublished
+        ? new Date(post.created * 1000).toISOString()
+        : null;
+
       mxPosts.push({
         _id: _id.toString(),
         created: new Date(post.created * 1000).toISOString(),
@@ -79,6 +85,16 @@ export class MxSpaceExporter {
           read: 0,
           like: 0,
         },
+        publicAt,
+        commentsIndex: 0,
+        contentFormat: 'markdown',
+        copyright: true,
+        isPublished,
+        meta: 'null',
+        pin: null,
+        pinOrder: 1,
+        related: [],
+        summary: null,
       });
     }
 
@@ -89,6 +105,11 @@ export class MxSpaceExporter {
       const _id = new ObjectId();
       contentMap.set(page.cid, _id);
 
+      // 根据 Typecho 的 status 设置发布时间
+      const publicAt = page.status === 'publish'
+        ? new Date(page.created * 1000).toISOString()
+        : null;
+
       mxPages.push({
         _id: _id.toString(),
         created: new Date(page.created * 1000).toISOString(),
@@ -98,6 +119,10 @@ export class MxSpaceExporter {
         slug: page.slug,
         allowComment: true,
         order: i,
+        publicAt,
+        commentsIndex: 0,
+        images: [],
+        subtitle: '',
       });
     }
 
@@ -280,7 +305,8 @@ export class MxSpaceExporter {
   }
 
   /**
-   * 递归转换对象中的 _id、categoryId、ref、parent、children 字段为 ObjectId
+   * 递归转换对象中的 _id、categoryId、ref、parent、children 字段为 ObjectId，
+   * 以及日期字符串字段为 Date 对象
    */
   private convertIdFields(obj: any): any {
     if (Array.isArray(obj)) {
@@ -308,6 +334,12 @@ export class MxSpaceExporter {
             }
             return id;
           });
+        } else if ((key === 'created' || key === 'modified' || key === 'publicAt') && typeof value === 'string') {
+          // 日期字段：将 ISO 字符串转换为 Date 对象
+          converted[key] = new Date(value);
+        } else if (key === 'publicAt' && value === null) {
+          // publicAt 可以为 null
+          converted[key] = null;
         } else {
           converted[key] = this.convertIdFields(value);
         }

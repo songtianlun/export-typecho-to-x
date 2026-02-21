@@ -141,6 +141,16 @@ export interface MxPost {
     read: number;
     like: number;
   };
+  publicAt: string | null;
+  commentsIndex: number;
+  contentFormat: string;
+  copyright: boolean;
+  isPublished: boolean;
+  meta: string;
+  pin: null;
+  pinOrder: number;
+  related: any[];
+  summary: string | null;
 }
 
 export interface MxPage {
@@ -152,6 +162,10 @@ export interface MxPage {
   slug: string;
   allowComment: boolean;
   order: number;
+  publicAt: string | null;
+  commentsIndex: number;
+  images: any[];
+  subtitle: string;
 }
 
 export interface MxComment {
