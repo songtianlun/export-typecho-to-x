@@ -203,6 +203,11 @@ export class MxSpaceExporter {
         children,
         key: '', // 先留空，稍后计算
         created: new Date(comment.created * 1000).toISOString(),
+        commentsIndex: 0, // 子评论计数器，稍后在 assignCommentKeys 中设置
+        ip: comment.ip || '',
+        agent: comment.agent || '',
+        pin: false,
+        isWhispers: false,
       };
 
       // 如果有父评论，添加 parent 字段
@@ -261,6 +266,7 @@ export class MxSpaceExporter {
         const currentIndex = (commentsIndexMap.get(comment.ref) || 0) + 1;
         commentsIndexMap.set(comment.ref, currentIndex);
         comment.key = `#${currentIndex}`;
+        comment.commentsIndex = 0; // 顶层评论的 commentsIndex 为 0
         commentIndexMap.set(comment._id, 0);
       } else {
         // 子评论
@@ -269,6 +275,7 @@ export class MxSpaceExporter {
           const currentIndex = (commentIndexMap.get(comment.parent) || 0) + 1;
           commentIndexMap.set(comment.parent, currentIndex);
           comment.key = `${parentComment.key}#${currentIndex}`;
+          comment.commentsIndex = currentIndex; // 子评论的 commentsIndex 是在父级下的索引
           commentIndexMap.set(comment._id, 0);
         }
       }

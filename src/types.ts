@@ -181,4 +181,9 @@ export interface MxComment {
   parent?: string;
   key: string;
   created: string;
+  commentsIndex: number;
+  ip: string;
+  agent: string;
+  pin: boolean;
+  isWhispers: boolean;
 }
