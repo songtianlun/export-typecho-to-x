@@ -32,6 +32,19 @@ export class MxSpaceExporter {
 
     // 转换 categories
     const mxCategories: MxCategory[] = [];
+
+    // 先创建一个默认的"未分类"分类
+    const defaultCategoryId = new ObjectId();
+    mxCategories.push({
+      _id: defaultCategoryId.toString(),
+      name: '未分类',
+      slug: 'uncategorized',
+      type: 0,
+      created: new Date().toISOString(),
+    });
+    categoryMap.set('uncategorized', defaultCategoryId);
+    categoryNameMap.set('未分类', defaultCategoryId);
+
     for (const category of categories) {
       const _id = new ObjectId();
       categoryMap.set(category.slug, _id);
@@ -52,8 +65,8 @@ export class MxSpaceExporter {
       const _id = new ObjectId();
       contentMap.set(post.cid, _id);
 
-      // 获取分类 ID
-      let categoryId = '';
+      // 获取分类 ID，如果没有分类则使用默认的"未分类"
+      let categoryId = defaultCategoryId.toString();
       if (post.categories.length > 0) {
         const catId = categoryNameMap.get(post.categories[0]);
         if (catId) {
