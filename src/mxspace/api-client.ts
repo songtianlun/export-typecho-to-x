@@ -114,27 +114,22 @@ export class MxSpaceApiClient {
   async createComment(refId: string, refType: 'Post' | 'Page', comment: TypechoComment): Promise<string> {
     const url = this.cleanUrl(comment.url);
     const body: any = {
-      refId,
-      author: comment.author || 'Anonymous',
-      mail: this.cleanMail(comment.mail),
       text: comment.text,
-      isWhispers: false,
+      source: comment.author || 'Anonymous',
     };
     if (url) body.url = url;
-    const res = await this.request<any>('POST', `/comments/master`, body);
+    const res = await this.request<any>('POST', `/comments/owner/comment/${refId}`, body);
     return res._id || res.id;
   }
 
   async replyComment(commentId: string, comment: TypechoComment): Promise<string> {
     const url = this.cleanUrl(comment.url);
     const body: any = {
-      author: comment.author || 'Anonymous',
-      mail: this.cleanMail(comment.mail),
       text: comment.text,
-      isWhispers: false,
+      source: comment.author || 'Anonymous',
     };
     if (url) body.url = url;
-    const res = await this.request<any>('POST', `/comments/master/reply/${commentId}`, body);
+    const res = await this.request<any>('POST', `/comments/owner/reply/${commentId}`, body);
     return res._id || res.id;
   }
 }
