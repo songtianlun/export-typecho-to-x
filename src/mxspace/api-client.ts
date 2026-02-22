@@ -31,9 +31,36 @@ export class MxSpaceApiClient {
   async getCategories(): Promise<Map<string, string>> {
     const res = await this.request<any>('GET', '/categories');
     const map = new Map<string, string>();
-    const data = res.data || res;
+    const data = res.data?.data || res.data || res;
     for (const cat of Array.isArray(data) ? data : []) {
       map.set(cat.name, cat._id || cat.id);
+    }
+    return map;
+  }
+
+  async getPages(): Promise<Map<string, string>> {
+    const res = await this.request<any>('GET', '/pages');
+    const map = new Map<string, string>();
+    const data = res.data?.data || res.data || res;
+    for (const page of Array.isArray(data) ? data : []) {
+      map.set(page.slug, page._id || page.id);
+    }
+    return map;
+  }
+
+  async getPosts(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    let page = 1;
+    while (true) {
+      const res = await this.request<any>('GET', `/posts?size=50&page=${page}`);
+      const data = res.data?.data || res.data || res;
+      const items = Array.isArray(data) ? data : [];
+      if (items.length === 0) break;
+      for (const post of items) {
+        map.set(post.slug, post._id || post.id);
+      }
+      if (items.length < 50) break;
+      page++;
     }
     return map;
   }
@@ -74,27 +101,40 @@ export class MxSpaceApiClient {
     return res._id || res.id;
   }
 
+  private cleanUrl(url: string): string {
+    if (!url || !url.match(/^https?:\/\/.+\..+/)) return '';
+    return url;
+  }
+
+  private cleanMail(mail: string): string {
+    if (!mail || !mail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) return 'anonymous@example.com';
+    return mail;
+  }
+
   async createComment(refId: string, refType: 'Post' | 'Page', comment: TypechoComment): Promise<string> {
-    const body = {
-      author: comment.author,
-      mail: comment.mail,
-      url: comment.url,
+    const url = this.cleanUrl(comment.url);
+    const body: any = {
+      refId,
+      author: comment.author || 'Anonymous',
+      mail: this.cleanMail(comment.mail),
       text: comment.text,
       isWhispers: false,
     };
-    const res = await this.request<any>('POST', `/comments/${refType.toLowerCase()}/${refId}`, body);
+    if (url) body.url = url;
+    const res = await this.request<any>('POST', `/comments/master`, body);
     return res._id || res.id;
   }
 
   async replyComment(commentId: string, comment: TypechoComment): Promise<string> {
-    const body = {
-      author: comment.author,
-      mail: comment.mail,
-      url: comment.url,
+    const url = this.cleanUrl(comment.url);
+    const body: any = {
+      author: comment.author || 'Anonymous',
+      mail: this.cleanMail(comment.mail),
       text: comment.text,
       isWhispers: false,
     };
-    const res = await this.request<any>('POST', `/comments/reply/${commentId}`, body);
+    if (url) body.url = url;
+    const res = await this.request<any>('POST', `/comments/master/reply/${commentId}`, body);
     return res._id || res.id;
   }
 }

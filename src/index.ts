@@ -662,6 +662,20 @@ async function importToMxSpaceApi(noCache: boolean): Promise<void> {
     // 1. 获取/创建分类
     console.log('Syncing categories...');
     const existingCategories = await apiClient.getCategories();
+
+    // 确保有默认分类
+    let defaultCategoryId = existingCategories.get('未分类');
+    if (!defaultCategoryId) {
+      try {
+        defaultCategoryId = await apiClient.createCategory('未分类', 'uncategorized');
+        console.log(`  [OK] 未分类 (default)`);
+      } catch (e) {
+        console.log(`  [FAIL] 未分类: ${(e as Error).message}`);
+      }
+    } else {
+      console.log(`  [EXIST] 未分类 (default)`);
+    }
+
     for (const cat of categories) {
       const existingId = existingCategories.get(cat.name);
       if (existingId) {
@@ -683,35 +697,56 @@ async function importToMxSpaceApi(noCache: boolean): Promise<void> {
     }
 
     // 2. 创建文章
-    console.log('\nCreating posts...');
+    console.log('\nSyncing posts...');
+    const existingPosts = await apiClient.getPosts();
     for (const post of posts) {
-      try {
-        const categoryId = categoryNameToId.get(post.categories[0] || '') || '';
-        const id = await apiClient.createPost(post, categoryId);
-        cidToId.set(post.cid, { id, type: 'Post' });
-        console.log(`  [OK] ${post.title}`);
-        result.created++;
-      } catch (e) {
-        console.log(`  [FAIL] ${post.title}: ${(e as Error).message}`);
-        result.failed++;
+      const existingId = existingPosts.get(post.slug);
+      if (existingId) {
+        cidToId.set(post.cid, { id: existingId, type: 'Post' });
+        result.skipped++;
+      } else {
+        const categoryId = categoryNameToId.get(post.categories[0] || '') || defaultCategoryId;
+        if (!categoryId) {
+          console.log(`  [SKIP] ${post.title}: no valid category`);
+          result.skipped++;
+          continue;
+        }
+        try {
+          const id = await apiClient.createPost(post, categoryId);
+          cidToId.set(post.cid, { id, type: 'Post' });
+          console.log(`  [OK] ${post.title}`);
+          result.created++;
+        } catch (e) {
+          console.log(`  [FAIL] ${post.title}: ${(e as Error).message}`);
+          result.failed++;
+        }
+        await sleep(300);
       }
-      await sleep(300);
     }
+    console.log(`  Skipped ${result.skipped} existing posts`);
 
     // 3. 创建页面
-    console.log('\nCreating pages...');
+    console.log('\nSyncing pages...');
+    const existingPages = await apiClient.getPages();
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
-      try {
-        const id = await apiClient.createPage(page, i);
-        cidToId.set(page.cid, { id, type: 'Page' });
-        console.log(`  [OK] ${page.title}`);
-        result.created++;
-      } catch (e) {
-        console.log(`  [FAIL] ${page.title}: ${(e as Error).message}`);
-        result.failed++;
+      const existingId = existingPages.get(page.slug);
+      if (existingId) {
+        cidToId.set(page.cid, { id: existingId, type: 'Page' });
+        console.log(`  [EXIST] ${page.title}`);
+        result.skipped++;
+      } else {
+        try {
+          const id = await apiClient.createPage(page, i);
+          cidToId.set(page.cid, { id, type: 'Page' });
+          console.log(`  [OK] ${page.title}`);
+          result.created++;
+        } catch (e) {
+          console.log(`  [FAIL] ${page.title}: ${(e as Error).message}`);
+          result.failed++;
+        }
+        await sleep(300);
       }
-      await sleep(300);
     }
 
     // 4. 创建评论
@@ -721,7 +756,7 @@ async function importToMxSpaceApi(noCache: boolean): Promise<void> {
 
     for (const comment of topComments) {
       const ref = cidToId.get(comment.cid);
-      if (!ref) continue;
+      if (!ref || !ref.id) continue;
       try {
         const id = await apiClient.createComment(ref.id, ref.type, comment);
         coidToId.set(comment.coid, id);
@@ -752,7 +787,6 @@ async function importToMxSpaceApi(noCache: boolean): Promise<void> {
     result.total = categories.length + posts.length + pages.length + comments.length;
   } catch (error) {
     console.error('Import error:', (error as Error).message);
-    await typechoClient.close();
     throw error;
   }
 
