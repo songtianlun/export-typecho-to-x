@@ -825,77 +825,95 @@ async function importMxSpaceComments(noCache: boolean): Promise<void> {
 
     console.log('\nImporting comments to MongoDB...');
     const coidToOid = new Map<number, string>();
+    const coidToKey = new Map<number, string>();
+    const coidToCommentsIndex = new Map<number, number>(); // 每个评论的子评论计数
 
     for (const [key, refComments] of commentsByRef) {
       const [refType, refId] = key.split(':') as ['posts' | 'pages', string];
-      const topComments = refComments.filter(c => c.parent === 0);
-      const childComments = refComments.filter(c => c.parent !== 0);
+      const topComments = refComments.filter(c => c.parent === 0).sort((a, b) => a.created - b.created);
+      const childComments = refComments.filter(c => c.parent !== 0).sort((a, b) => a.created - b.created);
 
-      let idx = 1;
+      let refCommentsIndex = 0; // 文章/页面级别的评论计数
       for (const c of topComments) {
+        refCommentsIndex++;
+        const keyStr = `#${refCommentsIndex}`;
         const doc = {
           _id: new ObjectId(),
           ref: new ObjectId(refId),
           refType,
           author: c.author || 'Anonymous',
           mail: c.mail || '',
-          url: c.url || '',
+          ...(c.url ? { url: c.url } : {}),
           text: c.text,
           state: c.status === 'approved' ? 1 : 0,
           children: [] as any[],
-          key: `#${idx}`,
+          key: keyStr,
           created: new Date(c.created * 1000),
-          commentsIndex: idx,
+          commentsIndex: 1, // 子评论计数，初始为1
           ip: c.ip || '',
           agent: c.agent || '',
+          location: 'Unknown',
           pin: false,
           isWhispers: false,
         };
         try {
           await commentsCol.insertOne(doc);
           coidToOid.set(c.coid, doc._id.toString());
-          console.log(`  [OK] Comment #${c.coid} -> ${doc.key}`);
+          coidToKey.set(c.coid, keyStr);
+          coidToCommentsIndex.set(c.coid, 1);
+          console.log(`  [OK] Comment #${c.coid} -> ${keyStr}`);
           result.created++;
         } catch (e) {
           console.log(`  [FAIL] Comment #${c.coid}: ${(e as Error).message}`);
           result.failed++;
         }
-        idx++;
       }
 
       for (const c of childComments) {
         const parentOid = coidToOid.get(c.parent);
-        if (!parentOid) continue;
+        const parentKey = coidToKey.get(c.parent);
+        if (!parentOid || !parentKey) continue;
+
+        // 先用父评论当前的 commentsIndex 生成 key，然后递增
+        const parentIdx = coidToCommentsIndex.get(c.parent) || 1;
+        const keyStr = `${parentKey}#${parentIdx}`;
+        coidToCommentsIndex.set(c.parent, parentIdx + 1);
         const doc = {
           _id: new ObjectId(),
           ref: new ObjectId(refId),
           refType,
           author: c.author || 'Anonymous',
           mail: c.mail || '',
-          url: c.url || '',
+          ...(c.url ? { url: c.url } : {}),
           text: c.text,
           state: c.status === 'approved' ? 1 : 0,
           children: [] as any[],
           parent: new ObjectId(parentOid),
-          key: `#${idx}`,
+          key: keyStr,
           created: new Date(c.created * 1000),
-          commentsIndex: idx,
+          commentsIndex: 1, // 子评论计数，初始为1
           ip: c.ip || '',
           agent: c.agent || '',
+          location: 'Unknown',
           pin: false,
           isWhispers: false,
         };
         try {
           await commentsCol.insertOne(doc);
-          await commentsCol.updateOne({ _id: new ObjectId(parentOid) }, { $push: { children: doc._id } } as any);
+          // 更新父评论的 commentsIndex 到数据库
+          await commentsCol.updateOne(
+            { _id: new ObjectId(parentOid) },
+            { $push: { children: doc._id }, $set: { commentsIndex: parentIdx + 1 } } as any
+          );
           coidToOid.set(c.coid, doc._id.toString());
-          console.log(`  [OK] Reply #${c.coid} -> ${doc.key}`);
+          coidToKey.set(c.coid, keyStr);
+          coidToCommentsIndex.set(c.coid, 0);
+          console.log(`  [OK] Reply #${c.coid} -> ${keyStr}`);
           result.created++;
         } catch (e) {
           console.log(`  [FAIL] Reply #${c.coid}: ${(e as Error).message}`);
           result.failed++;
         }
-        idx++;
       }
     }
 
