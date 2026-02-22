@@ -106,11 +106,6 @@ export class MxSpaceApiClient {
     return url;
   }
 
-  private cleanMail(mail: string): string {
-    if (!mail || !mail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) return 'anonymous@example.com';
-    return mail;
-  }
-
   async createComment(refId: string, refType: 'Post' | 'Page', comment: TypechoComment): Promise<string> {
     const url = this.cleanUrl(comment.url);
     const body: any = {
