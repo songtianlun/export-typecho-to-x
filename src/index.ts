@@ -1,10 +1,11 @@
-import { validateConfig, validateExportConfig, notionConfig, notionLinksConfig, typechoDbConfig, markdownExportDir } from './config';
+import { validateConfig, validateExportConfig, validateMxSpaceApiConfig, notionConfig, notionLinksConfig, typechoDbConfig, markdownExportDir, mxSpaceApiConfig } from './config';
 import { TypechoClient } from './typecho/client';
 import { NotionClient } from './notion/client';
 import { NotionLinksClient } from './notion/links-client';
 import { MarkdownExporter } from './markdown/exporter';
 import { Remark42Exporter } from './remark42/exporter';
 import { MxSpaceExporter } from './mxspace/exporter';
+import { MxSpaceApiClient } from './mxspace/api-client';
 import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
 import { cleanBrokenImageLinks } from './utils/image-checker';
@@ -15,14 +16,14 @@ function parseArgs(): {
   clearCache: boolean;
   skipImageValidation: boolean;
   checkImageLinks: boolean;
-  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace';
+  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api';
   outputDir?: string;
   outputFile?: string;
   siteId?: string;
   siteUrl?: string;
 } {
   const args = process.argv.slice(2);
-  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' = 'posts';
+  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' = 'posts';
   let outputDir: string | undefined;
   let outputFile: string | undefined;
   let siteId: string | undefined;
@@ -34,6 +35,8 @@ function parseArgs(): {
     command = 'markdown';
   } else if (args.includes('comments')) {
     command = 'comments';
+  } else if (args.includes('mxspace-api')) {
+    command = 'mxspace-api';
   } else if (args.includes('mxspace')) {
     command = 'mxspace';
   }
@@ -622,6 +625,140 @@ async function exportToMxSpace(noCache: boolean, outputDir?: string): Promise<vo
   console.log('='.repeat(50));
 }
 
+// 通过 API 导入到 MxSpace
+async function importToMxSpaceApi(noCache: boolean): Promise<void> {
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const apiClient = new MxSpaceApiClient(mxSpaceApiConfig.apiUrl!, mxSpaceApiConfig.apiKey!);
+
+  const result: SyncResult = {
+    total: 0, created: 0, updated: 0, skipped: 0, failed: 0, errors: [],
+  };
+
+  try {
+    console.log('\nFetching data from Typecho...');
+    await typechoClient.connect();
+
+    let posts: TypechoPost[] = [];
+    if (!noCache) {
+      const cached = getCachedPosts();
+      if (cached) posts = cached;
+    }
+    if (posts.length === 0) {
+      posts = await typechoClient.getPosts();
+      if (posts.length > 0) setCachedPosts(posts);
+    }
+
+    const pages = await typechoClient.getPages();
+    const categories = await typechoClient.getCategories();
+    const comments = await typechoClient.getComments();
+    await typechoClient.close();
+
+    console.log(`Posts: ${posts.length}, Pages: ${pages.length}, Categories: ${categories.length}, Comments: ${comments.length}\n`);
+
+    const categoryNameToId = new Map<string, string>();
+    const cidToId = new Map<number, { id: string; type: 'Post' | 'Page' }>();
+    const coidToId = new Map<number, string>();
+
+    // 1. 获取/创建分类
+    console.log('Syncing categories...');
+    const existingCategories = await apiClient.getCategories();
+    for (const cat of categories) {
+      const existingId = existingCategories.get(cat.name);
+      if (existingId) {
+        categoryNameToId.set(cat.name, existingId);
+        console.log(`  [EXIST] ${cat.name}`);
+        result.skipped++;
+      } else {
+        try {
+          const id = await apiClient.createCategory(cat.name, cat.slug);
+          categoryNameToId.set(cat.name, id);
+          console.log(`  [OK] ${cat.name}`);
+          result.created++;
+        } catch (e) {
+          console.log(`  [FAIL] ${cat.name}: ${(e as Error).message}`);
+          result.failed++;
+        }
+        await sleep(300);
+      }
+    }
+
+    // 2. 创建文章
+    console.log('\nCreating posts...');
+    for (const post of posts) {
+      try {
+        const categoryId = categoryNameToId.get(post.categories[0] || '') || '';
+        const id = await apiClient.createPost(post, categoryId);
+        cidToId.set(post.cid, { id, type: 'Post' });
+        console.log(`  [OK] ${post.title}`);
+        result.created++;
+      } catch (e) {
+        console.log(`  [FAIL] ${post.title}: ${(e as Error).message}`);
+        result.failed++;
+      }
+      await sleep(300);
+    }
+
+    // 3. 创建页面
+    console.log('\nCreating pages...');
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+      try {
+        const id = await apiClient.createPage(page, i);
+        cidToId.set(page.cid, { id, type: 'Page' });
+        console.log(`  [OK] ${page.title}`);
+        result.created++;
+      } catch (e) {
+        console.log(`  [FAIL] ${page.title}: ${(e as Error).message}`);
+        result.failed++;
+      }
+      await sleep(300);
+    }
+
+    // 4. 创建评论
+    console.log('\nCreating comments...');
+    const topComments = comments.filter(c => c.parent === 0);
+    const childComments = comments.filter(c => c.parent !== 0);
+
+    for (const comment of topComments) {
+      const ref = cidToId.get(comment.cid);
+      if (!ref) continue;
+      try {
+        const id = await apiClient.createComment(ref.id, ref.type, comment);
+        coidToId.set(comment.coid, id);
+        console.log(`  [OK] Comment #${comment.coid}`);
+        result.created++;
+      } catch (e) {
+        console.log(`  [FAIL] Comment #${comment.coid}: ${(e as Error).message}`);
+        result.failed++;
+      }
+      await sleep(300);
+    }
+
+    for (const comment of childComments) {
+      const parentId = coidToId.get(comment.parent);
+      if (!parentId) continue;
+      try {
+        const id = await apiClient.replyComment(parentId, comment);
+        coidToId.set(comment.coid, id);
+        console.log(`  [OK] Reply #${comment.coid}`);
+        result.created++;
+      } catch (e) {
+        console.log(`  [FAIL] Reply #${comment.coid}: ${(e as Error).message}`);
+        result.failed++;
+      }
+      await sleep(300);
+    }
+
+    result.total = categories.length + posts.length + pages.length + comments.length;
+  } catch (error) {
+    console.error('Import error:', (error as Error).message);
+    await typechoClient.close();
+    throw error;
+  }
+
+  printSummary(result, 'items');
+}
+
 // 打印同步统计
 function printSummary(result: SyncResult, type: string): void {
   console.log('='.repeat(50));
@@ -700,6 +837,15 @@ async function main(): Promise<void> {
     }
 
     await exportCommentsToRemark42(args.noCache, args.siteId, args.siteUrl, args.outputFile);
+  } else if (args.command === 'mxspace-api') {
+    try {
+      validateExportConfig();
+      validateMxSpaceApiConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+    await importToMxSpaceApi(args.noCache);
   } else if (args.command === 'mxspace') {
     try {
       validateExportConfig();

@@ -50,6 +50,22 @@ export const dbAdapter = getEnvOrDefault('TYPECHO_DB_ADAPTER', 'postgresql');
 // Markdown 导出目录配置
 export const markdownExportDir = getEnvOrDefault('MARKDOWN_EXPORT_DIR', './posts');
 
+// MxSpace API 配置
+export const mxSpaceApiConfig = {
+  apiUrl: getEnvOptional('MXSPACE_API_URL'),
+  apiKey: getEnvOptional('MXSPACE_API_KEY'),
+};
+
+// 验证 MxSpace API 配置
+export function validateMxSpaceApiConfig(): void {
+  if (!mxSpaceApiConfig.apiUrl || !mxSpaceApiConfig.apiKey) {
+    throw new Error('Missing MxSpace API configuration. Please set MXSPACE_API_URL and MXSPACE_API_KEY in your .env file.');
+  }
+  console.log('MxSpace API Configuration:');
+  console.log(`  - API URL: ${mxSpaceApiConfig.apiUrl}`);
+  console.log(`  - API Key: ${mxSpaceApiConfig.apiKey.substring(0, 8)}...`);
+}
+
 // 验证配置
 export function validateConfig(): void {
   if (!notionConfig.apiKey || !notionConfig.databaseId) {

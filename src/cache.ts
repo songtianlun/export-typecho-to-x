@@ -4,7 +4,7 @@ import { TypechoPost } from './types';
 
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'posts.json');
-const DEFAULT_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const DEFAULT_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 interface CacheData {
   timestamp: number;
