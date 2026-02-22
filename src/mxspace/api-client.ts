@@ -127,4 +127,20 @@ export class MxSpaceApiClient {
     const res = await this.request<any>('POST', `/comments/owner/reply/${commentId}`, body);
     return res._id || res.id;
   }
+
+  async getLinks(): Promise<Map<string, string>> {
+    const res = await this.request<any>('GET', '/links');
+    const map = new Map<string, string>();
+    const data = res.data?.data || res.data || res;
+    for (const link of Array.isArray(data) ? data : []) {
+      map.set(link.url, link._id || link.id);
+    }
+    return map;
+  }
+
+  async createLink(link: { name: string; url: string; avatar?: string; description?: string; type: number }): Promise<string> {
+    const body = { ...link, state: 0 };
+    const res = await this.request<any>('POST', '/links', body);
+    return res._id || res.id;
+  }
 }

@@ -16,14 +16,14 @@ function parseArgs(): {
   clearCache: boolean;
   skipImageValidation: boolean;
   checkImageLinks: boolean;
-  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments';
+  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links';
   outputDir?: string;
   outputFile?: string;
   siteId?: string;
   siteUrl?: string;
 } {
   const args = process.argv.slice(2);
-  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' = 'posts';
+  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' = 'posts';
   let outputDir: string | undefined;
   let outputFile: string | undefined;
   let siteId: string | undefined;
@@ -35,6 +35,8 @@ function parseArgs(): {
     command = 'markdown';
   } else if (args.includes('comments')) {
     command = 'comments';
+  } else if (args.includes('mxspace-links')) {
+    command = 'mxspace-links';
   } else if (args.includes('mxspace-comments')) {
     command = 'mxspace-comments';
   } else if (args.includes('mxspace-api')) {
@@ -925,6 +927,69 @@ async function importMxSpaceComments(noCache: boolean): Promise<void> {
   printSummary(result, 'comments');
 }
 
+// 通过 API 导入友链到 MxSpace
+async function importMxSpaceLinks(): Promise<void> {
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const apiClient = new MxSpaceApiClient(mxSpaceApiConfig.apiUrl!, mxSpaceApiConfig.apiKey!);
+
+  const result: SyncResult = { total: 0, created: 0, updated: 0, skipped: 0, failed: 0, errors: [] };
+
+  try {
+    console.log('\nFetching links from Typecho...');
+    await typechoClient.connect();
+    const links = await typechoClient.getLinks();
+    await typechoClient.close();
+
+    result.total = links.length;
+    console.log(`Total: ${links.length} links\n`);
+
+    if (links.length === 0) {
+      console.log('No links to import.');
+      return;
+    }
+
+    console.log('Fetching existing links from MxSpace...');
+    const existingLinks = await apiClient.getLinks();
+    console.log(`Found ${existingLinks.size} existing links\n`);
+
+    console.log('Importing links...');
+    console.log('-'.repeat(50));
+
+    for (const link of links) {
+      if (existingLinks.has(link.url)) {
+        console.log(`  [SKIP] ${link.name} - already exists`);
+        result.skipped++;
+        continue;
+      }
+
+      // sort: good -> Collection(1), one/others -> Friend(0)
+      const type = link.sort === 'good' ? 1 : 0;
+      try {
+        await apiClient.createLink({
+          name: link.name,
+          url: link.url,
+          avatar: link.image || undefined,
+          description: link.description || undefined,
+          type,
+        });
+        console.log(`  [OK] ${link.name}`);
+        result.created++;
+      } catch (e) {
+        console.log(`  [FAIL] ${link.name}: ${(e as Error).message}`);
+        result.failed++;
+      }
+      await sleep(300);
+    }
+
+    console.log('-'.repeat(50));
+  } catch (error) {
+    console.error('Import error:', (error as Error).message);
+    throw error;
+  }
+
+  printSummary(result, 'links');
+}
+
 // 打印同步统计
 function printSummary(result: SyncResult, type: string): void {
   console.log('='.repeat(50));
@@ -1021,6 +1086,15 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     await importMxSpaceComments(args.noCache);
+  } else if (args.command === 'mxspace-links') {
+    try {
+      validateExportConfig();
+      validateMxSpaceApiConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+    await importMxSpaceLinks();
   } else if (args.command === 'mxspace') {
     try {
       validateExportConfig();
