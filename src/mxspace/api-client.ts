@@ -128,6 +128,10 @@ export class MxSpaceApiClient {
     return res._id || res.id;
   }
 
+  private normalizeUrl(url: string): string {
+    return url.replace(/\/+$/, '');
+  }
+
   async getLinks(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     let page = 1;
@@ -137,7 +141,7 @@ export class MxSpaceApiClient {
       const items = Array.isArray(data) ? data : [];
       if (items.length === 0) break;
       for (const link of items) {
-        map.set(link.url, link._id || link.id);
+        map.set(this.normalizeUrl(link.url), link._id || link.id);
       }
       if (items.length < 50) break;
       page++;

@@ -955,15 +955,27 @@ async function importMxSpaceLinks(): Promise<void> {
     console.log('Importing links...');
     console.log('-'.repeat(50));
 
+    const normalizeUrl = (url: string) => url.replace(/\/+$/, '');
+    const seen = new Set<string>();
+
     for (const link of links) {
-      if (existingLinks.has(link.url)) {
+      const normalizedUrl = normalizeUrl(link.url);
+
+      if (seen.has(normalizedUrl)) {
+        console.log(`  [SKIP] ${link.name} - duplicate in source`);
+        result.skipped++;
+        continue;
+      }
+      seen.add(normalizedUrl);
+
+      if (existingLinks.has(normalizedUrl)) {
         console.log(`  [SKIP] ${link.name} - already exists`);
         result.skipped++;
         continue;
       }
 
-      // sort: good -> Collection(1), one/others -> Friend(0)
-      const type = link.sort === 'good' ? 1 : 0;
+      // sort: good/ten -> Collection(1), one/others -> Friend(0)
+      const type = (link.sort === 'good' || link.sort === 'ten') ? 1 : 0;
       try {
         await apiClient.createLink({
           name: link.name,
