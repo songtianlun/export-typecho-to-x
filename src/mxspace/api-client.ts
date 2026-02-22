@@ -129,11 +129,18 @@ export class MxSpaceApiClient {
   }
 
   async getLinks(): Promise<Map<string, string>> {
-    const res = await this.request<any>('GET', '/links');
     const map = new Map<string, string>();
-    const data = res.data?.data || res.data || res;
-    for (const link of Array.isArray(data) ? data : []) {
-      map.set(link.url, link._id || link.id);
+    let page = 1;
+    while (true) {
+      const res = await this.request<any>('GET', `/links?size=50&page=${page}`);
+      const data = res.data?.data || res.data || res;
+      const items = Array.isArray(data) ? data : [];
+      if (items.length === 0) break;
+      for (const link of items) {
+        map.set(link.url, link._id || link.id);
+      }
+      if (items.length < 50) break;
+      page++;
     }
     return map;
   }
