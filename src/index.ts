@@ -16,14 +16,14 @@ function parseArgs(): {
   clearCache: boolean;
   skipImageValidation: boolean;
   checkImageLinks: boolean;
-  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api';
+  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments';
   outputDir?: string;
   outputFile?: string;
   siteId?: string;
   siteUrl?: string;
 } {
   const args = process.argv.slice(2);
-  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' = 'posts';
+  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' = 'posts';
   let outputDir: string | undefined;
   let outputFile: string | undefined;
   let siteId: string | undefined;
@@ -35,6 +35,8 @@ function parseArgs(): {
     command = 'markdown';
   } else if (args.includes('comments')) {
     command = 'comments';
+  } else if (args.includes('mxspace-comments')) {
+    command = 'mxspace-comments';
   } else if (args.includes('mxspace-api')) {
     command = 'mxspace-api';
   } else if (args.includes('mxspace')) {
@@ -749,48 +751,160 @@ async function importToMxSpaceApi(noCache: boolean): Promise<void> {
       }
     }
 
-    // 4. 创建评论
-    console.log('\nCreating comments...');
-    const topComments = comments.filter(c => c.parent === 0);
-    const childComments = comments.filter(c => c.parent !== 0);
+    // 4. 创建评论 - 使用 mxspace-comments 命令直接导入 MongoDB
+    console.log('\n[INFO] Use "mxspace-comments" command to import comments directly to MongoDB.');
+    console.log('       This preserves original timestamps. Run: npm run dev -- mxspace-comments');
 
-    for (const comment of topComments) {
-      const ref = cidToId.get(comment.cid);
-      if (!ref || !ref.id) continue;
-      try {
-        const id = await apiClient.createComment(ref.id, ref.type, comment);
-        coidToId.set(comment.coid, id);
-        console.log(`  [OK] Comment #${comment.coid}`);
-        result.created++;
-      } catch (e) {
-        console.log(`  [FAIL] Comment #${comment.coid}: ${(e as Error).message}`);
-        result.failed++;
-      }
-      await sleep(300);
-    }
-
-    for (const comment of childComments) {
-      const parentId = coidToId.get(comment.parent);
-      if (!parentId) continue;
-      try {
-        const id = await apiClient.replyComment(parentId, comment);
-        coidToId.set(comment.coid, id);
-        console.log(`  [OK] Reply #${comment.coid}`);
-        result.created++;
-      } catch (e) {
-        console.log(`  [FAIL] Reply #${comment.coid}: ${(e as Error).message}`);
-        result.failed++;
-      }
-      await sleep(300);
-    }
-
-    result.total = categories.length + posts.length + pages.length + comments.length;
+    result.total = categories.length + posts.length + pages.length;
   } catch (error) {
     console.error('Import error:', (error as Error).message);
     throw error;
   }
 
   printSummary(result, 'items');
+}
+
+// 通过 MongoDB 直接导入评论到 MxSpace
+async function importMxSpaceComments(noCache: boolean): Promise<void> {
+  const { MongoClient, ObjectId } = await import('mongodb');
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const apiClient = new MxSpaceApiClient(mxSpaceApiConfig.apiUrl!, mxSpaceApiConfig.apiKey!);
+
+  const result: SyncResult = { total: 0, created: 0, updated: 0, skipped: 0, failed: 0, errors: [] };
+
+  const mongo = new MongoClient(mxSpaceApiConfig.mongoUri);
+  await mongo.connect();
+  const db = mongo.db();
+  const commentsCol = db.collection('comments');
+
+  try {
+    console.log('\nFetching data...');
+    await typechoClient.connect();
+
+    let posts: TypechoPost[] = [];
+    if (!noCache) {
+      const cached = getCachedPosts();
+      if (cached) posts = cached;
+    }
+    if (posts.length === 0) {
+      posts = await typechoClient.getPosts();
+      if (posts.length > 0) setCachedPosts(posts);
+    }
+
+    const pages = await typechoClient.getPages();
+    const comments = await typechoClient.getComments();
+    await typechoClient.close();
+
+    console.log(`Posts: ${posts.length}, Pages: ${pages.length}, Comments: ${comments.length}\n`);
+
+    // Build slug → ObjectId mapping from MxSpace API
+    console.log('Fetching MxSpace posts/pages...');
+    const mxPosts = await apiClient.getPosts();
+    const mxPages = await apiClient.getPages();
+
+    // Build Typecho cid → MxSpace ref mapping
+    const cidToRef = new Map<number, { id: string; type: 'posts' | 'pages' }>();
+    for (const post of posts) {
+      const mxId = mxPosts.get(post.slug);
+      if (mxId) cidToRef.set(post.cid, { id: mxId, type: 'posts' });
+    }
+    for (const page of pages) {
+      const mxId = mxPages.get(page.slug);
+      if (mxId) cidToRef.set(page.cid, { id: mxId, type: 'pages' });
+    }
+
+    // Group comments by ref
+    const commentsByRef = new Map<string, typeof comments>();
+    for (const c of comments) {
+      const ref = cidToRef.get(c.cid);
+      if (!ref) continue;
+      const key = `${ref.type}:${ref.id}`;
+      if (!commentsByRef.has(key)) commentsByRef.set(key, []);
+      commentsByRef.get(key)!.push(c);
+    }
+
+    console.log('\nImporting comments to MongoDB...');
+    const coidToOid = new Map<number, string>();
+
+    for (const [key, refComments] of commentsByRef) {
+      const [refType, refId] = key.split(':') as ['posts' | 'pages', string];
+      const topComments = refComments.filter(c => c.parent === 0);
+      const childComments = refComments.filter(c => c.parent !== 0);
+
+      let idx = 1;
+      for (const c of topComments) {
+        const doc = {
+          _id: new ObjectId(),
+          ref: new ObjectId(refId),
+          refType,
+          author: c.author || 'Anonymous',
+          mail: c.mail || '',
+          url: c.url || '',
+          text: c.text,
+          state: c.status === 'approved' ? 1 : 0,
+          children: [] as any[],
+          key: `#${idx}`,
+          created: new Date(c.created * 1000),
+          commentsIndex: idx,
+          ip: c.ip || '',
+          agent: c.agent || '',
+          pin: false,
+          isWhispers: false,
+        };
+        try {
+          await commentsCol.insertOne(doc);
+          coidToOid.set(c.coid, doc._id.toString());
+          console.log(`  [OK] Comment #${c.coid} -> ${doc.key}`);
+          result.created++;
+        } catch (e) {
+          console.log(`  [FAIL] Comment #${c.coid}: ${(e as Error).message}`);
+          result.failed++;
+        }
+        idx++;
+      }
+
+      for (const c of childComments) {
+        const parentOid = coidToOid.get(c.parent);
+        if (!parentOid) continue;
+        const doc = {
+          _id: new ObjectId(),
+          ref: new ObjectId(refId),
+          refType,
+          author: c.author || 'Anonymous',
+          mail: c.mail || '',
+          url: c.url || '',
+          text: c.text,
+          state: c.status === 'approved' ? 1 : 0,
+          children: [] as any[],
+          parent: new ObjectId(parentOid),
+          key: `#${idx}`,
+          created: new Date(c.created * 1000),
+          commentsIndex: idx,
+          ip: c.ip || '',
+          agent: c.agent || '',
+          pin: false,
+          isWhispers: false,
+        };
+        try {
+          await commentsCol.insertOne(doc);
+          await commentsCol.updateOne({ _id: new ObjectId(parentOid) }, { $push: { children: doc._id } } as any);
+          coidToOid.set(c.coid, doc._id.toString());
+          console.log(`  [OK] Reply #${c.coid} -> ${doc.key}`);
+          result.created++;
+        } catch (e) {
+          console.log(`  [FAIL] Reply #${c.coid}: ${(e as Error).message}`);
+          result.failed++;
+        }
+        idx++;
+      }
+    }
+
+    result.total = comments.length;
+  } finally {
+    await mongo.close();
+  }
+
+  printSummary(result, 'comments');
 }
 
 // 打印同步统计
@@ -880,6 +994,15 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     await importToMxSpaceApi(args.noCache);
+  } else if (args.command === 'mxspace-comments') {
+    try {
+      validateExportConfig();
+      validateMxSpaceApiConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+    await importMxSpaceComments(args.noCache);
   } else if (args.command === 'mxspace') {
     try {
       validateExportConfig();

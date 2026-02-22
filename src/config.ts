@@ -54,6 +54,7 @@ export const markdownExportDir = getEnvOrDefault('MARKDOWN_EXPORT_DIR', './posts
 export const mxSpaceApiConfig = {
   apiUrl: getEnvOptional('MXSPACE_API_URL'),
   apiKey: getEnvOptional('MXSPACE_API_KEY'),
+  mongoUri: getEnvOrDefault('MXSPACE_MONGO_URI', 'mongodb://127.0.0.1:27017/mx-space'),
 };
 
 // 验证 MxSpace API 配置
