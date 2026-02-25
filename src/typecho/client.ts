@@ -195,6 +195,60 @@ export class TypechoClient {
     }));
   }
 
+  // 获取 Typecho 配置项
+  async getOption(name: string): Promise<string | null> {
+    const optionsTable = this.table('options');
+
+    const result = await this.pool.query<{ value: string }>(`
+      SELECT value FROM ${optionsTable}
+      WHERE name = $1 AND "user" = 0
+    `, [name]);
+
+    return result.rows[0]?.value || null;
+  }
+
+  // 获取路由配置
+  async getRoutingTable(): Promise<{ post: string; page: string }> {
+    const routingValue = await this.getOption('routingTable');
+
+    // 默认路由
+    let postPattern = '/archives/{slug}.html';
+    let pagePattern = '/{slug}.html';
+
+    if (routingValue) {
+      // 解析 PHP 序列化格式的路由表
+      // 提取 post 和 page 的 url 模式
+      const postMatch = routingValue.match(/s:4:"post"[^}]*s:3:"url";s:\d+:"([^"]+)"/);
+      const pageMatch = routingValue.match(/s:4:"page"[^}]*s:3:"url";s:\d+:"([^"]+)"/);
+
+      if (postMatch) {
+        postPattern = postMatch[1];
+      }
+      if (pageMatch) {
+        pagePattern = pageMatch[1];
+      }
+    }
+
+    return { post: postPattern, page: pagePattern };
+  }
+
+  // 根据路由模式生成 URL
+  generateUrl(pattern: string, content: TypechoPost): string {
+    const date = new Date(content.created * 1000);
+
+    return pattern
+      .replace(/\[slug\]/g, content.slug)
+      .replace(/\{slug\}/g, content.slug)
+      .replace(/\[cid\]/g, String(content.cid))
+      .replace(/\{cid\}/g, String(content.cid))
+      .replace(/\[year\]/g, String(date.getFullYear()))
+      .replace(/\{year\}/g, String(date.getFullYear()))
+      .replace(/\[month\]/g, String(date.getMonth() + 1).padStart(2, '0'))
+      .replace(/\{month\}/g, String(date.getMonth() + 1).padStart(2, '0'))
+      .replace(/\[day\]/g, String(date.getDate()).padStart(2, '0'))
+      .replace(/\{day\}/g, String(date.getDate()).padStart(2, '0'));
+  }
+
   // 清理文章内容（移除 Typecho 特殊标记）
   private cleanContent(text: string): string {
     // 移除 <!--markdown--> 标记
