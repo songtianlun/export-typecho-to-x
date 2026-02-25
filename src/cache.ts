@@ -4,12 +4,19 @@ import { TypechoPost } from './types';
 
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'posts.json');
+const PAGES_CACHE_FILE = path.join(CACHE_DIR, 'pages.json');
 const DEFAULT_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 interface CacheData {
   timestamp: number;
   ttl: number;
   posts: TypechoPost[];
+}
+
+interface PagesCacheData {
+  timestamp: number;
+  ttl: number;
+  pages: TypechoPost[];
 }
 
 function ensureCacheDir(): void {
@@ -60,4 +67,45 @@ export function clearCache(): void {
     fs.unlinkSync(CACHE_FILE);
     console.log('Cache cleared');
   }
+  if (fs.existsSync(PAGES_CACHE_FILE)) {
+    fs.unlinkSync(PAGES_CACHE_FILE);
+    console.log('Pages cache cleared');
+  }
+}
+
+export function getCachedPages(): TypechoPost[] | null {
+  if (!fs.existsSync(PAGES_CACHE_FILE)) {
+    return null;
+  }
+
+  try {
+    const data: PagesCacheData = JSON.parse(fs.readFileSync(PAGES_CACHE_FILE, 'utf-8'));
+    const now = Date.now();
+    const age = now - data.timestamp;
+
+    if (age > data.ttl) {
+      console.log(`Pages cache expired (age: ${Math.round(age / 1000 / 60)} min)`);
+      return null;
+    }
+
+    const remainingMin = Math.round((data.ttl - age) / 1000 / 60);
+    console.log(`Using cached pages (expires in ${remainingMin} min)`);
+    return data.pages;
+  } catch (error) {
+    console.log('Pages cache read error, will fetch from database');
+    return null;
+  }
+}
+
+export function setCachedPages(pages: TypechoPost[], ttl: number = DEFAULT_TTL): void {
+  ensureCacheDir();
+
+  const data: PagesCacheData = {
+    timestamp: Date.now(),
+    ttl,
+    pages,
+  };
+
+  fs.writeFileSync(PAGES_CACHE_FILE, JSON.stringify(data, null, 2));
+  console.log(`Cached ${pages.length} pages (TTL: ${ttl / 1000 / 60} min)`);
 }

@@ -1,6 +1,7 @@
 import { TypechoClient } from './typecho/client';
 import { typechoDbConfig } from './config';
 import { TypechoPost } from './types';
+import { getCachedPosts, setCachedPosts, getCachedPages, setCachedPages } from './cache';
 
 interface CheckResult {
   oldUrl: string;
@@ -9,38 +10,27 @@ interface CheckResult {
   error?: string;
 }
 
-// 并发控制器
-async function runWithConcurrency<T, R>(
+// 并发控制器 - 即时输出版本
+async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = [];
-  const executing: Promise<void>[] = [];
+  fn: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  let index = 0;
+  const total = items.length;
 
-  for (const item of items) {
-    const p = fn(item).then((result) => {
-      results.push(result);
-    });
-
-    executing.push(p);
-
-    if (executing.length >= concurrency) {
-      await Promise.race(executing);
-      for (let i = executing.length - 1; i >= 0; i--) {
-        const status = await Promise.race([
-          executing[i].then(() => 'fulfilled'),
-          Promise.resolve('pending'),
-        ]);
-        if (status === 'fulfilled') {
-          executing.splice(i, 1);
-        }
-      }
+  async function worker(): Promise<void> {
+    while (index < total) {
+      const currentIndex = index++;
+      await fn(items[currentIndex], currentIndex);
     }
   }
 
-  await Promise.all(executing);
-  return results;
+  const workers = Array(Math.min(concurrency, total))
+    .fill(null)
+    .map(() => worker());
+
+  await Promise.all(workers);
 }
 
 // 检查单个 URL
@@ -62,7 +52,7 @@ async function checkUrl(oldUrl: string, newUrl: string): Promise<CheckResult> {
 }
 
 // 主检查函数
-export async function checkMapping(oldDomain: string, newDomain: string): Promise<void> {
+export async function checkMapping(oldDomain: string, newDomain: string, noCache: boolean = false): Promise<void> {
   oldDomain = oldDomain.replace(/\/+$/, '');
   newDomain = newDomain.replace(/\/+$/, '');
 
@@ -76,6 +66,16 @@ export async function checkMapping(oldDomain: string, newDomain: string): Promis
   let routingTable: { post: string; page: string };
 
   try {
+    // 尝试从缓存获取
+    if (!noCache) {
+      const cachedPosts = getCachedPosts();
+      const cachedPages = getCachedPages();
+      if (cachedPosts) posts = cachedPosts;
+      if (cachedPages) pages = cachedPages;
+    } else {
+      console.log('缓存已禁用 (--no-cache)');
+    }
+
     console.log('连接数据库...');
     await typechoClient.connect();
 
@@ -84,8 +84,19 @@ export async function checkMapping(oldDomain: string, newDomain: string): Promis
     console.log(`文章路由: ${routingTable.post}`);
     console.log(`页面路由: ${routingTable.page}`);
 
-    posts = await typechoClient.getPosts();
-    pages = await typechoClient.getPages();
+    // 如果缓存未命中，从数据库获取
+    if (posts.length === 0) {
+      console.log('获取文章列表...');
+      posts = await typechoClient.getPosts();
+      if (posts.length > 0) setCachedPosts(posts);
+    }
+    if (pages.length === 0) {
+      console.log('获取页面列表...');
+      pages = await typechoClient.getPages();
+      if (pages.length > 0) setCachedPages(pages);
+    }
+
+    console.log(`文章: ${posts.length}, 页面: ${pages.length}`);
 
     // 生成 URL 对
     const urlPairs: Array<{ oldUrl: string; newUrl: string }> = [];
@@ -117,33 +128,27 @@ export async function checkMapping(oldDomain: string, newDomain: string): Promis
     }
 
     // 统计
-    let checked = 0;
     let passed = 0;
     let failed = 0;
     const failedResults: CheckResult[] = [];
 
-    // 并发检查
-    const checkTasks = urlPairs.map(({ oldUrl, newUrl }) => async () => {
+    // 并发检查 - 即时输出
+    await runWithConcurrency(urlPairs, 5, async ({ oldUrl, newUrl }, idx) => {
       const result = await checkUrl(oldUrl, newUrl);
-      checked++;
 
       if (result.success) {
         passed++;
-        console.log(`${result.oldUrl} -> ${result.newUrl} [OK]`);
+        console.log(`[${idx + 1}/${total}] ${result.newUrl} [OK]`);
       } else {
         failed++;
         failedResults.push(result);
-        console.log(`${result.oldUrl} -> ${result.newUrl} [FAIL: ${result.error}]`);
+        console.log(`[${idx + 1}/${total}] ${result.newUrl} [FAIL: ${result.error}]`);
       }
-
-      return result;
     });
-
-    await runWithConcurrency(checkTasks, 5, (task) => task());
 
     // 打印统计
     console.log('-'.repeat(60));
-    console.log(`总计: ${total} | 检查: ${checked} | 通过: ${passed} | 失败: ${failed}`);
+    console.log(`总计: ${total} | 通过: ${passed} | 失败: ${failed}`);
 
     if (failedResults.length > 0) {
       console.log('\n失败列表:');

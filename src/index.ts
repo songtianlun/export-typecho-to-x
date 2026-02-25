@@ -1145,7 +1145,7 @@ async function main(): Promise<void> {
       console.error('Configuration error:', (error as Error).message);
       process.exit(1);
     }
-    await checkMapping(args.oldDomain, args.newDomain);
+    await checkMapping(args.oldDomain, args.newDomain, args.noCache);
   } else {
     await syncPosts(args.noCache, args.skipImageValidation, args.checkImageLinks);
   }

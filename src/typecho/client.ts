@@ -237,15 +237,17 @@ export class TypechoClient {
     const date = new Date(content.created * 1000);
 
     return pattern
+      // Typecho 格式: [slug], [cid:digital], [year:digital] 等
       .replace(/\[slug\]/g, content.slug)
+      .replace(/\[cid(?::\w+)?\]/g, String(content.cid))
+      .replace(/\[year(?::\w+)?\]/g, String(date.getFullYear()))
+      .replace(/\[month(?::\w+)?\]/g, String(date.getMonth() + 1).padStart(2, '0'))
+      .replace(/\[day(?::\w+)?\]/g, String(date.getDate()).padStart(2, '0'))
+      // 花括号格式
       .replace(/\{slug\}/g, content.slug)
-      .replace(/\[cid\]/g, String(content.cid))
       .replace(/\{cid\}/g, String(content.cid))
-      .replace(/\[year\]/g, String(date.getFullYear()))
       .replace(/\{year\}/g, String(date.getFullYear()))
-      .replace(/\[month\]/g, String(date.getMonth() + 1).padStart(2, '0'))
       .replace(/\{month\}/g, String(date.getMonth() + 1).padStart(2, '0'))
-      .replace(/\[day\]/g, String(date.getDate()).padStart(2, '0'))
       .replace(/\{day\}/g, String(date.getDate()).padStart(2, '0'));
   }
 
