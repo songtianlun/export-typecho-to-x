@@ -33,22 +33,37 @@ async function runWithConcurrency<T>(
   await Promise.all(workers);
 }
 
-// 检查单个 URL
-async function checkUrl(oldUrl: string, newUrl: string): Promise<CheckResult> {
-  try {
-    const response = await fetch(newUrl, {
-      method: 'HEAD',
-      redirect: 'follow',
-    });
+// 延迟函数
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-    if (response.ok) {
-      return { oldUrl, newUrl, success: true };
-    } else {
-      return { oldUrl, newUrl, success: false, error: `${response.status}` };
+// 检查单个 URL（带重试）
+async function checkUrl(oldUrl: string, newUrl: string, maxRetries: number = 3): Promise<CheckResult> {
+  let lastError: string = '';
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(newUrl, {
+        method: 'HEAD',
+        redirect: 'follow',
+      });
+
+      if (response.ok) {
+        return { oldUrl, newUrl, success: true };
+      } else {
+        // HTTP 错误不重试（如 404）
+        return { oldUrl, newUrl, success: false, error: `${response.status}` };
+      }
+    } catch (error) {
+      lastError = (error as Error).message;
+      if (attempt < maxRetries) {
+        await sleep(3000);
+      }
     }
-  } catch (error) {
-    return { oldUrl, newUrl, success: false, error: (error as Error).message };
   }
+
+  return { oldUrl, newUrl, success: false, error: lastError };
 }
 
 // 主检查函数
@@ -132,8 +147,8 @@ export async function checkMapping(oldDomain: string, newDomain: string, noCache
     let failed = 0;
     const failedResults: CheckResult[] = [];
 
-    // 并发检查 - 即时输出
-    await runWithConcurrency(urlPairs, 5, async ({ oldUrl, newUrl }, idx) => {
+    // 并发检查 - 即时输出（并发20，带重试）
+    await runWithConcurrency(urlPairs, 20, async ({ oldUrl, newUrl }, idx) => {
       const result = await checkUrl(oldUrl, newUrl);
 
       if (result.success) {
