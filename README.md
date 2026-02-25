@@ -12,6 +12,7 @@ A CLI tool to sync Typecho blog posts to Notion database, export as Markdown fil
 - **导出到 Mix-Space BSON 格式 | Export to Mix-Space BSON format**
 - **导出评论到 Remark42 备份格式 | Export comments to Remark42 backup format**
 - **检查并移除失效的图片链接（可选）| Check and remove broken image links (optional)**
+- **检查页面映射可访问性 | Check page mapping accessibility**
 - 自动创建 Notion 数据库缺失的属性字段 | Auto-create missing Notion database properties
 - 通过 slug 判断文章是否已存在，支持增量更新 | Incremental sync based on slug
 - 比较修改时间，跳过未变更的文章 | Skip unmodified posts by comparing modification time
@@ -264,6 +265,48 @@ mongorestore --db=mx-space --collection=pages ./mxspace-export/pages.bson
 mongorestore --db=mx-space --collection=comments ./mxspace-export/comments.bson
 ```
 
+### 检查页面映射 | Check Page Mapping
+
+验证从旧博客迁移到新平台后，所有页面是否都能正常访问。该命令会读取数据库中的所有文章和页面，并发检查新域名的可访问性。
+
+Verify that all pages are accessible after migrating from old blog to new platform. This command reads all posts and pages from database and concurrently checks accessibility on the new domain.
+
+**使用方法 | Usage:**
+
+```bash
+# 基本用法 | Basic usage
+npm run dev -- check-mapping https://old-blog.com https://new-blog.com
+
+# 编译后运行 | After build
+npm run build
+npm start check-mapping https://old-blog.com https://new-blog.com
+```
+
+**输出示例 | Output Example:**
+
+```
+检查页面映射: https://old-blog.com -> https://new-blog.com
+------------------------------------------------------------
+连接数据库...
+共 100 个页面需要检查
+
+https://old-blog.com/archives/post1.html -> https://new-blog.com/archives/post1.html [OK]
+https://old-blog.com/archives/post2.html -> https://new-blog.com/archives/post2.html [FAIL: 404]
+------------------------------------------------------------
+总计: 100 | 检查: 100 | 通过: 98 | 失败: 2
+
+失败列表:
+  https://new-blog.com/archives/post2.html [404]
+```
+
+**特性 | Features:**
+
+- ✅ 读取所有文章和页面 | Read all posts and pages
+- ✅ URL 格式：`/archives/{slug}.html` | URL format: `/archives/{slug}.html`
+- ✅ 并发 5 个请求检查 | Concurrent 5 requests
+- ✅ 逐行输出检查结果 | Line-by-line output
+- ✅ 最后打印统计摘要和失败列表 | Print summary and failed list
+
 
 ### 本地运行 | Local
 
@@ -391,6 +434,9 @@ npm run dev -- mxspace                                                 # 导出�
 npm run dev -- mxspace -o ./my-export                                  # 指定导出目录 / Specify directory
 npm run dev -- mxspace --output-dir=/path/to/export
 npm run dev -- mxspace --no-cache                                      # 跳过缓存 / Skip cache
+
+# 检查页面映射 | Check page mapping
+npm run dev -- check-mapping https://old-blog.com https://new-blog.com # 检查迁移后页面可访问性 / Check page accessibility after migration
 ```
 
 ## Notion 数据库字段 | Database Fields
