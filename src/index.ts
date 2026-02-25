@@ -9,6 +9,7 @@ import { MxSpaceApiClient } from './mxspace/api-client';
 import { SyncResult, TypechoPost } from './types';
 import { getCachedPosts, setCachedPosts, clearCache } from './cache';
 import { cleanBrokenImageLinks } from './utils/image-checker';
+import { checkMapping } from './check-mapping';
 
 // 解析命令行参数
 function parseArgs(): {
@@ -16,20 +17,34 @@ function parseArgs(): {
   clearCache: boolean;
   skipImageValidation: boolean;
   checkImageLinks: boolean;
-  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links';
+  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' | 'check-mapping';
   outputDir?: string;
   outputFile?: string;
   siteId?: string;
   siteUrl?: string;
+  oldDomain?: string;
+  newDomain?: string;
 } {
   const args = process.argv.slice(2);
-  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' = 'posts';
+  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' | 'check-mapping' = 'posts';
   let outputDir: string | undefined;
   let outputFile: string | undefined;
   let siteId: string | undefined;
   let siteUrl: string | undefined;
+  let oldDomain: string | undefined;
+  let newDomain: string | undefined;
 
-  if (args.includes('links')) {
+  if (args.includes('check-mapping')) {
+    command = 'check-mapping';
+    // 解析位置参数：check-mapping <oldDomain> <newDomain>
+    const idx = args.indexOf('check-mapping');
+    if (args[idx + 1] && !args[idx + 1].startsWith('-')) {
+      oldDomain = args[idx + 1];
+    }
+    if (args[idx + 2] && !args[idx + 2].startsWith('-')) {
+      newDomain = args[idx + 2];
+    }
+  } else if (args.includes('links')) {
     command = 'links';
   } else if (args.includes('markdown') || args.includes('export')) {
     command = 'markdown';
@@ -99,6 +114,8 @@ function parseArgs(): {
     outputFile,
     siteId,
     siteUrl,
+    oldDomain,
+    newDomain,
   };
 }
 
@@ -1115,6 +1132,20 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     await exportToMxSpace(args.noCache, args.outputDir);
+  } else if (args.command === 'check-mapping') {
+    if (!args.oldDomain || !args.newDomain) {
+      console.error('Error: 需要提供旧域名和新域名');
+      console.error('Usage: npm start check-mapping <旧域名> <新域名>');
+      console.error('Example: npm start check-mapping https://old-blog.com https://new-blog.com');
+      process.exit(1);
+    }
+    try {
+      validateExportConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+    await checkMapping(args.oldDomain, args.newDomain);
   } else {
     await syncPosts(args.noCache, args.skipImageValidation, args.checkImageLinks);
   }
