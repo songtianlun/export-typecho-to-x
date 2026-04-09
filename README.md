@@ -9,6 +9,7 @@ A CLI tool to sync Typecho blog posts to Notion database, export as Markdown fil
 - 从 Typecho PostgreSQL 数据库读取文章 | Read posts from Typecho PostgreSQL database
 - 同步标题、内容、分类、标签、发布状态到 Notion | Sync title, content, categories, tags, status to Notion
 - **导出文章为 Markdown 文件（带 frontmatter）| Export posts as Markdown files with frontmatter**
+- **导出文章和页面为 Hugo Markdown 格式 | Export posts and pages as Hugo Markdown format**
 - **导出到 Mix-Space BSON 格式 | Export to Mix-Space BSON format**
 - **导出评论到 Remark42 备份格式 | Export comments to Remark42 backup format**
 - **检查并移除失效的图片链接（可选）| Check and remove broken image links (optional)**
@@ -157,6 +158,70 @@ Use `--check-image-links` parameter to enable image link checking. When enabled,
 - 并发检查加快处理速度，建议配合缓存使用 | Concurrent checking speeds up processing, recommend using with cache
 - 自动跟随重定向，避免误判 301/302 为失效链接 | Auto-follow redirects to avoid false positives on 301/302
 - 仅检查图片 URL 是否返回 200，不验证图片内容 | Only checks if URL returns 200, doesn't validate image content
+
+### 导出到 Hugo | Export to Hugo
+
+将 Typecho 文章和页面导出为 Hugo 兼容的 Markdown 文件，带有标准 Hugo YAML frontmatter。
+
+Export Typecho posts and pages as Hugo-compatible Markdown files with standard Hugo YAML frontmatter.
+
+**导出目录结构 | Output Directory Structure:**
+
+```
+hugo-export/
+├── posts/           # 博客文章 | Blog posts
+│   ├── 2024-01-01-my-first-post.md
+│   └── 2024-06-15-another-post.md
+└── pages/           # 独立页面 | Standalone pages
+    ├── about.md
+    └── links.md
+```
+
+**文件格式示例 | File Format Example:**
+
+```markdown
+---
+title: "我的第一篇文章"
+date: 2024-01-01T08:00:00.000Z
+lastmod: 2024-06-01T12:30:00.000Z
+draft: false
+slug: "my-first-post"
+categories:
+  - "技术"
+tags:
+  - "hugo"
+  - "博客"
+---
+
+文章内容...
+```
+
+**使用方法 | Usage:**
+
+```bash
+# 导出到默认目录 ./hugo-export | Export to default directory ./hugo-export
+npm run dev -- hugo
+
+# 指定导出目录 | Specify export directory
+npm run dev -- hugo -o ./my-hugo-site/content
+npm run dev -- hugo --output-dir=/path/to/content
+
+# 跳过缓存 | Skip cache
+npm run dev -- hugo --no-cache
+
+# 完整示例 | Full example
+npm run dev -- hugo -o ./content --no-cache
+```
+
+**特性 | Features:**
+
+- ✅ 同时导出文章和页面 | Export both posts and pages
+- ✅ 文章文件名格式：`YYYY-MM-DD-slug.md` | Post filename format: `YYYY-MM-DD-slug.md`
+- ✅ 页面文件名格式：`slug.md` | Page filename format: `slug.md`
+- ✅ 标准 Hugo YAML frontmatter（`date`、`lastmod`、`draft`、`slug`、`categories`、`tags`）| Standard Hugo YAML frontmatter
+- ✅ `draft: true` 自动标记非发布状态的内容 | Auto-mark non-published content as `draft: true`
+- ✅ 比较 `lastmod` 时间，智能跳过未变更文件 | Smart skip unchanged files by comparing `lastmod`
+- ✅ 自动创建导出目录 | Auto-create export directory
 
 ### 导出评论到 Remark42 | Export Comments to Remark42
 
@@ -423,6 +488,12 @@ npm run dev -- markdown --output-dir=/path/to/export
 npm run dev -- markdown --no-cache                         # 跳过缓存 / Skip cache
 npm run dev -- markdown --check-image-links                # 检查并移除失效图片 / Check and remove broken images
 npm run dev -- markdown -o ./blog --check-image-links      # 组合使用 / Combined
+
+# 导出到 Hugo | Export to Hugo
+npm run dev -- hugo                                                    # 导出到默认目录 ./hugo-export / Export to default ./hugo-export
+npm run dev -- hugo -o ./my-hugo-site/content                          # 指定导出目录 / Specify directory
+npm run dev -- hugo --output-dir=/path/to/content
+npm run dev -- hugo --no-cache                                         # 跳过缓存 / Skip cache
 
 # 导出评论到 Remark42 | Export comments to Remark42
 npm run dev -- comments --site-id=example.com --site-url=https://example.com           # 基本用法 / Basic usage
