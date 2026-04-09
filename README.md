@@ -1,8 +1,8 @@
 # Sync Typecho to Notion
 
-将 Typecho 博客文章同步到 Notion 数据库，或导出为 Markdown 文件，或导出评论到 Remark42 的命令行工具。
+将 Typecho 博客内容导出到 Notion、Markdown、Hugo、Mix-Space 或 Remark42 的命令行工具。
 
-A CLI tool to sync Typecho blog posts to Notion database, export as Markdown files, or export comments to Remark42.
+A CLI tool to export Typecho blog content to Notion, Markdown, Hugo, Mix-Space, or Remark42.
 
 ## 功能 | Features
 
