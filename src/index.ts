@@ -3,6 +3,7 @@ import { TypechoClient } from './typecho/client';
 import { NotionClient } from './notion/client';
 import { NotionLinksClient } from './notion/links-client';
 import { MarkdownExporter } from './markdown/exporter';
+import { HugoExporter } from './hugo/exporter';
 import { Remark42Exporter } from './remark42/exporter';
 import { MxSpaceExporter } from './mxspace/exporter';
 import { MxSpaceApiClient } from './mxspace/api-client';
@@ -17,7 +18,7 @@ function parseArgs(): {
   clearCache: boolean;
   skipImageValidation: boolean;
   checkImageLinks: boolean;
-  command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' | 'check-mapping';
+  command: 'posts' | 'links' | 'markdown' | 'hugo' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' | 'check-mapping';
   outputDir?: string;
   outputFile?: string;
   siteId?: string;
@@ -26,7 +27,7 @@ function parseArgs(): {
   newDomain?: string;
 } {
   const args = process.argv.slice(2);
-  let command: 'posts' | 'links' | 'markdown' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' | 'check-mapping' = 'posts';
+  let command: 'posts' | 'links' | 'markdown' | 'hugo' | 'comments' | 'mxspace' | 'mxspace-api' | 'mxspace-comments' | 'mxspace-links' | 'check-mapping' = 'posts';
   let outputDir: string | undefined;
   let outputFile: string | undefined;
   let siteId: string | undefined;
@@ -48,6 +49,8 @@ function parseArgs(): {
     command = 'links';
   } else if (args.includes('markdown') || args.includes('export')) {
     command = 'markdown';
+  } else if (args.includes('hugo')) {
+    command = 'hugo';
   } else if (args.includes('comments')) {
     command = 'comments';
   } else if (args.includes('mxspace-links')) {
@@ -496,6 +499,140 @@ async function exportToMarkdown(noCache: boolean, checkImageLinks: boolean, outp
     console.log(`  Total images checked: ${totalImagesChecked}`);
     console.log(`  Total images removed: ${totalImagesRemoved}`);
   }
+}
+
+// 导出到 Hugo
+async function exportToHugo(noCache: boolean, outputDir?: string): Promise<void> {
+  const typechoClient = new TypechoClient(typechoDbConfig);
+  const exportDir = outputDir || './hugo-export';
+  const hugoExporter = new HugoExporter(exportDir);
+
+  console.log(`Export directory: ${exportDir}`);
+  console.log(`  posts -> ${exportDir}/posts/`);
+  console.log(`  pages -> ${exportDir}/pages/`);
+  console.log();
+
+  const postsResult: SyncResult = {
+    total: 0, created: 0, updated: 0, skipped: 0, failed: 0, errors: [],
+  };
+  const pagesResult: SyncResult = {
+    total: 0, created: 0, updated: 0, skipped: 0, failed: 0, errors: [],
+  };
+
+  let posts: TypechoPost[] = [];
+  let pages: TypechoPost[] = [];
+
+  try {
+    console.log('\nFetching posts and pages...');
+
+    if (!noCache) {
+      const cached = getCachedPosts();
+      if (cached) {
+        posts = cached;
+      }
+    } else {
+      console.log('Cache disabled (--no-cache)');
+    }
+
+    console.log('Connecting to Typecho database...');
+    await typechoClient.connect();
+
+    if (posts.length === 0) {
+      posts = await typechoClient.getPosts();
+      if (posts.length > 0) {
+        setCachedPosts(posts);
+      }
+    }
+
+    pages = await typechoClient.getPages();
+    await typechoClient.close();
+
+    console.log(`Total posts: ${posts.length}`);
+    console.log(`Total pages: ${pages.length}`);
+    console.log();
+
+    // 导出文章
+    if (posts.length > 0) {
+      console.log('Exporting posts...');
+      console.log('-'.repeat(50));
+      postsResult.total = posts.length;
+
+      let idx = 0;
+      for (const post of posts) {
+        idx++;
+        const progress = `[${idx}/${posts.length}]`;
+        try {
+          const { action, filename } = await hugoExporter.exportPost(post);
+          if (action === 'skipped') {
+            console.log(`${progress} [SKIP]   "${post.title}" -> posts/${filename}`);
+            postsResult.skipped++;
+          } else if (action === 'created') {
+            console.log(`${progress} [CREATE] "${post.title}" -> posts/${filename}`);
+            postsResult.created++;
+          } else {
+            console.log(`${progress} [UPDATE] "${post.title}" -> posts/${filename}`);
+            postsResult.updated++;
+          }
+        } catch (error) {
+          const msg = (error as Error).message;
+          console.error(`${progress} [FAILED] "${post.title}" - ${msg}`);
+          postsResult.failed++;
+          postsResult.errors.push({ title: post.title, error: msg });
+        }
+      }
+      console.log('-'.repeat(50));
+      console.log();
+    }
+
+    // 导出页面
+    if (pages.length > 0) {
+      console.log('Exporting pages...');
+      console.log('-'.repeat(50));
+      pagesResult.total = pages.length;
+
+      let idx = 0;
+      for (const page of pages) {
+        idx++;
+        const progress = `[${idx}/${pages.length}]`;
+        try {
+          const { action, filename } = await hugoExporter.exportPage(page);
+          if (action === 'skipped') {
+            console.log(`${progress} [SKIP]   "${page.title}" -> pages/${filename}`);
+            pagesResult.skipped++;
+          } else if (action === 'created') {
+            console.log(`${progress} [CREATE] "${page.title}" -> pages/${filename}`);
+            pagesResult.created++;
+          } else {
+            console.log(`${progress} [UPDATE] "${page.title}" -> pages/${filename}`);
+            pagesResult.updated++;
+          }
+        } catch (error) {
+          const msg = (error as Error).message;
+          console.error(`${progress} [FAILED] "${page.title}" - ${msg}`);
+          pagesResult.failed++;
+          pagesResult.errors.push({ title: page.title, error: msg });
+        }
+      }
+      console.log('-'.repeat(50));
+      console.log();
+    }
+
+  } catch (error) {
+    console.error('Export error:', (error as Error).message);
+    await typechoClient.close();
+    throw error;
+  }
+
+  // 打印统计
+  const total: SyncResult = {
+    total: postsResult.total + pagesResult.total,
+    created: postsResult.created + pagesResult.created,
+    updated: postsResult.updated + pagesResult.updated,
+    skipped: postsResult.skipped + pagesResult.skipped,
+    failed: postsResult.failed + pagesResult.failed,
+    errors: [...postsResult.errors, ...pagesResult.errors],
+  };
+  printSummary(total, 'files');
 }
 
 // 导出评论到 Remark42 格式
@@ -1076,6 +1213,14 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     await exportToMarkdown(args.noCache, args.checkImageLinks, args.outputDir);
+  } else if (args.command === 'hugo') {
+    try {
+      validateExportConfig();
+    } catch (error) {
+      console.error('Configuration error:', (error as Error).message);
+      process.exit(1);
+    }
+    await exportToHugo(args.noCache, args.outputDir);
   } else if (args.command === 'comments') {
     try {
       validateExportConfig();
